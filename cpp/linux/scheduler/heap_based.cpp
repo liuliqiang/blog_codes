@@ -5,7 +5,7 @@
 #include <ctime>
 #include <iostream>
 #include <array>
-#include <forward_list>
+#include <queue>
 using namespace std;
 
 #include <sys/time.h>
@@ -23,18 +23,17 @@ int currTimerId = 0;
 timer_id id[TIMER_NUM];
 
 struct timer {
-    timer* next;
     timer_id id;			/**< timer id		*/
 
     int interval;			/**< timer interval(second)*/
-    int rotation; 			/**< 0 -> interval 	*/
+    int timeout; 			/**< 0 -> interval 	*/
 
     timer_expiry *cb;		/**< call if expiry 	*/
     void *user_data;		/**< callback arg	*/
     int len;			/**< user_data length	*/
 
     timer(int interval, timer_expiry *timerCb, void* userData, int dataLen):
-            interval(interval), rotation(0), cb(timerCb), id(currTimerId++), next(NULL) {
+            interval(interval), timeout(0), cb(timerCb), id(currTimerId++) {
         if(userData != NULL || dataLen != 0) {
             this->user_data = malloc(dataLen);
             memcpy(this->user_data, userData, dataLen);
@@ -45,27 +44,22 @@ struct timer {
     }
 };
 
-int currSlot = 0;
-array<timer*, WHEEL_SIZE> timeWheel;
+struct TimerLessThan {
+    bool operator()(const timer &a, const timer &b) const {
+        return a.timeout > b.timeout;
+    }
+};
 
+int currTick;
+priority_queue<timer, vector<timer>, TimerLessThan> pq;
 
 time_t addTimer(int interval, timer_expiry *cb, void *user_data, int len) {
-    int targetSlot = (interval + WHEEL_SIZE - currSlot) % WHEEL_SIZE;
+    timer t(interval, cb, user_data, len);
+    t.timeout = currTick + interval;
 
-    timer *t = new timer(interval, cb, user_data, len);
-    t->rotation = (interval + currSlot) / WHEEL_SIZE;
+    pq.push(t);
 
-    timer* next = timeWheel[targetSlot];
-    if (next) {
-        while(next->next) {
-            next = next->next;
-        }
-        next->next = t;
-    } else {
-        timeWheel[targetSlot] = t;
-    }
-
-    return t->id;
+    return t.id;
 }
 
 static char *fmtTime(char *tstr)
@@ -90,26 +84,18 @@ int timerCb(timer_id id, void *arg, int len)
 
 static void sigFunc(int signo)
 {
-    timer *t = timeWheel[currSlot], *prev = NULL;
+    for (currTick ++; !pq.empty(); ) {
+        timer t = pq.top();
 
-    while (t) {
-        if (t->rotation > 0) {
-            t->rotation --;
-            prev = t;
+        if (t.timeout <= currTick) {
+            pq.pop();
+            t.cb(t.id, t.user_data, t.len);
+            t.timeout = currTick + t.interval;
+            pq.push(t);
         } else {
-            t->cb(t->id, t->user_data, t->len);
-
-            if (prev == NULL) {
-                timeWheel[currSlot] = t->next;
-                addTimer(t->interval, t->cb, t->user_data, t->len);
-                delete t;
-            } else {
-                prev->next = t->next;
-            }
+            return ;
         }
-        t = t->next;
     }
-    currSlot = (currSlot + 1) % WHEEL_SIZE;
 }
 
 
@@ -130,10 +116,6 @@ int main() {
     if (ret != 0) {
         perror("set timer error");
         return -1;
-    }
-
-    for (int i = 0; i < WHEEL_SIZE; i++) {
-        timeWheel[i] = NULL;
     }
 
     printf("register all\n");
