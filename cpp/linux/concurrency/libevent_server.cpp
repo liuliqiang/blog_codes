@@ -2,6 +2,8 @@
 // Created by yetship on 2017/7/13.
 //
 #include <cstdio>
+#include <cstdlib>
+#include <cerrno>
 #include <iostream>
 #include <netinet/in.h>
 #include <arpa/inet.h>

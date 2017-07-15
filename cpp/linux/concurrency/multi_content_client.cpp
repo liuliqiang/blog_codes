@@ -9,7 +9,7 @@
 
 using namespace std;
 
-#define HOST "127.0.0.1"
+#define HOST "192.168.199.138"
 #define PORT 3002
 #define QUEUE_SIZE 5
 #define BUFFER_SIZE 1024
