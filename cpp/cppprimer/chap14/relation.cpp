@@ -30,7 +30,7 @@ public:
 
         size_t idx = maxLen;
         for(; myLen > 0 && addedNumLen > 0; myLen --, addedNumLen --, idx--) {
-            result[idx] += (this->digits[myLen-1] + bi.digits[addedNumLen-1] - '0' << 2);
+            result[idx] += (this->digits[myLen-1] + bi.digits[addedNumLen-1] - '0' * 2);
             result[idx-1] += result[idx] / 10;
             result[idx] = result[idx] % 10 + '0';
         }
@@ -56,8 +56,8 @@ public:
     }
 };
 
-BigInteger operator+(const BigInteger &bi1, const BigInteger &bi2) {
-    return bi1;
+BigInteger operator+(BigInteger &bi1, BigInteger &bi2) {
+    return bi1.plus(bi2);
 }
 
 ostream& operator<<(ostream& os, const BigInteger &bi) {
@@ -71,4 +71,6 @@ int main() {
 
     BigInteger c = a.plus(b);
     cout << c << endl;
+
+    cout << (a + b) << endl;
 }

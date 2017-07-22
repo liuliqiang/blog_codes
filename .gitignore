@@ -63,3 +63,4 @@ target/
 .idea/*
 .idea
 cmake-build-*
+a.out
