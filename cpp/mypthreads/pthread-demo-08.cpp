@@ -1,6 +1,9 @@
 #include <ctime>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 #include <iostream>
+
 using namespace std;
 
 #include <unistd.h>
@@ -10,21 +13,31 @@ using namespace std;
 
 int numList[MAX_NUM];
 int readIdx = 0;
+int writeIdx = 0;
 int readCount = 0;
 
+pthread_cond_t count_cond = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 void* pushFunc(void*) {
-    for (int i = 0; i < MAX_NUM; i++) {
-        numList[i] = i;
+    for (; writeIdx < MAX_NUM; writeIdx++) {
+        numList[writeIdx] = writeIdx;
+        pthread_cond_signal(&count_cond);
     }
 }
 
 void* popFunc(void*) {
-    while (readCount < MAX_NUM) {
-        if (readIdx < MAX_NUM) {
+    while (readIdx < writeIdx || writeIdx == 0) {
+        pthread_mutex_lock(&count_mutex);
+        if (readIdx < writeIdx) {
             numList[readIdx] = -1;
             readIdx ++;
             readCount ++;
+        } else if (readCount == MAX_NUM) {
+            // notice other thread to break
+            pthread_cond_signal(&count_cond);
         }
+        pthread_mutex_unlock(&count_mutex);
     }
 }
 
