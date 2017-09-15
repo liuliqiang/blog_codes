@@ -11,6 +11,7 @@ using namespace std;
 int numList[MAX_NUM];
 int readIdx = 0;
 int readCount = 0;
+pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void* pushFunc(void*) {
     for (int i = 0; i < MAX_NUM; i++) {
@@ -20,11 +21,14 @@ void* pushFunc(void*) {
 
 void* popFunc(void*) {
     while (readCount < MAX_NUM) {
+        pthread_mutex_lock(&count_mutex);
         if (readIdx < MAX_NUM) {
+            // todo: readIdx maybe not set
             numList[readIdx] = -1;
             readIdx ++;
             readCount ++;
         }
+        pthread_mutex_unlock(&count_mutex);
     }
 }
 
