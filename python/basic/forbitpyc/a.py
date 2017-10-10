@@ -4,4 +4,4 @@
 
 class A(object):
     def a(self):
-        print("A.a")
+        return "A.a"
