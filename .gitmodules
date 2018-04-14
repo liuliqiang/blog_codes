@@ -1,0 +1,3 @@
+[submodule "golang/grpc/demo-grpc"]
+	path = golang/grpc/demo-grpc
+	url = http://gitlab.com/pantomath-io/demo-grpc.git
