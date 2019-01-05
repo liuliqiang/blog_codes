@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 
+	"github.com/liuliqiang/blog_codes/rpc/grpc/go"
+
 	"google.golang.org/grpc"
 )
 
@@ -14,6 +16,7 @@ var (
 )
 
 func main() {
+	port = new(int)
 	flag.IntVar(port, "port", 8080, "port to serve")
 	flag.Parse()
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
