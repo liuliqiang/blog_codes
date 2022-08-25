@@ -64,3 +64,5 @@ target/
 .idea
 cmake-build-*
 a.out
+
+mygentool
