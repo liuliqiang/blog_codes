@@ -1,0 +1,13 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: simple-pod-01
+  labels:
+    app: simple-pod
+spec:
+  containers:
+    - image: lukelau/rest-docker:0.0.1
+      name: simple-pod
+      args:
+        - -server.addr=0.0.0.0:8080

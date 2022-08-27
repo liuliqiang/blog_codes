@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox-pod-args
+spec:
+  containers:
+    - image: busybox
+      command:
+        - sleep
+        - "3600"
+      volumeMounts:
+        - mountPath: /tmp/a.txt
+          name: file-cm
+          readOnly: true
+      imagePullPolicy: IfNotPresent
+      name: busybox
+  volumes:
+    - name: file-cm
+      configMap:
+        name: file-cm
+  restartPolicy: Always
+

@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox-pod-file
+  namespace: liqiang.io-io
+spec:
+  containers:
+    - image: busybox
+      command:
+        - echo
+      args:
+        - "$(INTERVAL)"
+      env:
+        - name: INTERVAL
+          valueFrom:
+            configMapKeyRef:
+              name: test-interval
+              key: TEST_INTERVAL
+      imagePullPolicy: IfNotPresent
+      name: busybox
+  restartPolicy: Always
+

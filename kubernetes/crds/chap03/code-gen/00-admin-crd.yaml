@@ -1,0 +1,29 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: admins.admin.liqiang.io
+spec:
+  group: admin.liqiang.io
+  names:
+    kind: Admin
+    plural: admins
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          description: Admin define the admin user for liqiang.io.io website.
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                email:
+                  type: string

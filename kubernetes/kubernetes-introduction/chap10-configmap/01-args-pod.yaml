@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox-pod-args
+  namespace: liqiang.io-io
+spec:
+  containers:
+    - image: busybox
+      command:
+        - echo
+      args:
+        - "hello world"
+      imagePullPolicy: IfNotPresent
+      name: busybox
+  restartPolicy: Always
+

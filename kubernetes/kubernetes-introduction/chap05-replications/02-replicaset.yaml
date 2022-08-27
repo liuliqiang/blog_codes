@@ -1,0 +1,21 @@
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: simple-pod-rc
+spec:
+  selector:
+    matchLabels:
+      app: simple-pod
+  replicas: 3
+  template:
+    metadata:
+      name: simple-pod
+      labels:
+        app: simple-pod
+    spec:
+      containers:
+        - image: lukelau/rest-docker:0.0.1
+          name: timemachine
+          args:
+            - -server.addr=0.0.0.0:8080

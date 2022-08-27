@@ -1,0 +1,5 @@
+FROM golang:1.12.6
+
+COPY . /go/src/github.com/liuliqiang/grpc-demo
+
+WORKDIR /go/src/github.com/liuliqiang/grpc-demo

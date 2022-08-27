@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox-pod-cm-env
+spec:
+  containers:
+    - image: busybox
+      command:
+        - sleep
+        - "3600"
+      env:
+        - name: INTERVAL
+          valueFrom:
+            configMapKeyRef:
+              name: test-interval
+              key: TEST_INTERVAL
+      imagePullPolicy: IfNotPresent
+      name: busybox
+  restartPolicy: Always
+
+
+

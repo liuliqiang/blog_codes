@@ -1,0 +1,19 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox-pod-env
+  namespace: liqiang.io-io
+spec:
+  containers:
+    - image: busybox
+      command:
+        - sleep
+        - "3600"
+      env:
+        - name: INTERVAL
+          value: 30s
+      imagePullPolicy: IfNotPresent
+      name: busybox
+  restartPolicy: Always
+

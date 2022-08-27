@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rest-deployment
+  labels:
+    app: chap06-demo-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: chap06-demo-app
+  template:
+    metadata:
+      labels:
+        app: chap06-demo-app
+    spec:
+      containers:
+        - name: chap06-demo-app
+          image: lukelau/rest-docker:0.0.2
+          ports:
+            - containerPort: 8080
+          args:
+            - -server.addr=0.0.0.0:8080

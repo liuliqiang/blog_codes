@@ -1,0 +1,9 @@
+---
+apiVersion: "admin.liqiang.io.io/v1"
+kind: Admin
+metadata:
+  name: liuliqiang
+spec:
+  username: admin
+  password: password
+  email: liqianglau@outlook.com
