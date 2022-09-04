@@ -2,11 +2,18 @@ package main
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/liuliqiang/log4go"
 	"net/http"
 )
 
 func main() {
 	server := gin.New()
+	server.NoRoute(func(c *gin.Context) {
+		log4go.Error("Route not found")
+	})
+	server.NoMethod(func(c *gin.Context) {
+		log4go.Error("Method not found")
+	})
 
 	server.GET("/index", func(c *gin.Context) {
 
