@@ -2,54 +2,34 @@ package main
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/liuliqiang/log4go"
-	"net/http"
 )
 
 func main() {
 	server := gin.New()
-	server.NoRoute(func(c *gin.Context) {
-		log4go.Error("Route not found")
-	})
-	server.NoMethod(func(c *gin.Context) {
-		log4go.Error("Method not found")
-	})
 
-	server.GET("/index", func(c *gin.Context) {
+	//server.GET("/api/v1/posts", func(context *gin.Context) {})
+	//server.GET("/api/v1/users", func(context *gin.Context) {})
+	//server.GET("/api/v1/users/zhangsan/avatar", func(context *gin.Context) {})
+	//server.GET("/api/v1/users/user/*path", func(context *gin.Context) {})
+	//server.GET("/api/v1/users/:user", func(context *gin.Context) {})
+	//server.GET("/:api", func(context *gin.Context) {})
+	//server.GET("/*api", func(context *gin.Context) {})
 
-	})
-
-	//apiRouter := server.Group("/api/v1")
-	//apiRouter.GET("/posts", func(c *gin.Context) {
-	//	c.JSON(http.StatusOK, gin.H{"method": "get"})
-	//}).POST("/posts", func(c *gin.Context) {
-	//	c.JSON(http.StatusOK, gin.H{"method": "post"})
-	//})
-	server.GET("/user/:name", func(c *gin.Context) {
-		name := c.Param("name")
-		c.String(http.StatusOK, "Hello %s", name)
-	})
-
-	// However, this one will match /user/john/ and also /user/john/send
-	// If no other routers match /user/john, it will redirect to /user/john/
-	server.GET("/user/:name/*action", func(c *gin.Context) {
-		name := c.Param("name")
-		action := c.Param("action")
-		message := name + " is " + action
-		c.String(http.StatusOK, message)
-	})
-
-	// For each matched request Context will hold the route definition
-	server.POST("/user/:name/*action", func(c *gin.Context) {
-		b := c.FullPath() == "/user/:name/*action" // true
-		c.String(http.StatusOK, "%t", b)
-	})
-
-	// This handler will add a new router for /user/groups.
-	// Exact routes are resolved before param routes, regardless of the order they were defined.
-	// Routes starting with /user/groups are never interpreted as /user/:name/... routes
-	server.GET("/user/groups", func(c *gin.Context) {
-		c.String(http.StatusOK, "The available groups are [...]")
-	})
 	server.Run("127.0.0.1:8081")
 }
+
+/*
+
+node.path=/*api
+node.priority=1
+node.fullPath=/*api
+node.indices=
+node.nType=catchAll
+node.wildChild=false
+len(node.handlers)=1
+
+
+
+
+
+*/
