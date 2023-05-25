@@ -4,8 +4,9 @@ import (
 	"context"
 	"log"
 
-	"github.com/liuliqiang/blog_codes/rpc/grpc/go"
 	"google.golang.org/grpc"
+
+	helloworld "github.com/liuliqiang/grpc-go-demo"
 )
 
 func main() {
