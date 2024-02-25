@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"log"
 
 	"github.com/IBM/sarama"
 )
@@ -27,22 +28,7 @@ func main() {
 	flag.BoolVar(&verbose, "verbose", false, "Sarama logging")
 	flag.Parse()
 
-	if len(brokers) == 0 {
-		panic("no Kafka bootstrap brokers defined, please set the -brokers flag")
+	if err := ListTopics(); err != nil {
+		log.Fatalf("Error listing topics: %v", err)
 	}
-
-	if len(topic) == 0 {
-		panic("no topics given to be consumed, please set the -topics flag")
-	}
-
-	if len(group) == 0 {
-		panic("no Kafka consumer group defined, please set the -group flag")
-	}
-
-	if err := AtLeastOnceMain(); err != nil {
-		panic(err)
-	}
-	// if err := AtMostOnceMain(); err != nil {
-	// 	panic(err)
-	// }
 }
