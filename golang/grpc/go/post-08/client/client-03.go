@@ -7,9 +7,10 @@ import (
 	"io/ioutil"
 	"log"
 
-	"github.com/grpc/grpc-go/examples/helloworld/helloworld"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+
+	helloworld "github.com/liuliqiang/blog_codes/golang/grpc/go/proto-gens"
 )
 
 func main() {

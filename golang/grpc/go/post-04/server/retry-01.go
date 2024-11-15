@@ -4,14 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"log"
 	"net"
 
-	"github.com/liuliqiang/blog-demos/microservices/rpc/grpc/go/proto-gens"
-
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	helloworld "github.com/liuliqiang/blog_codes/golang/grpc/go/proto-gens"
 )
 
 var (

@@ -7,10 +7,10 @@ import (
 	"log"
 	"net"
 
-	"github.com/liuliqiang/blog-demos/microservices/rpc/grpc/go/post-05/interceptor"
-
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/examples/helloworld/helloworld"
+
+	"github.com/liuliqiang/blog_codes/golang/grpc/go/post-05/interceptor"
+	helloworld "github.com/liuliqiang/blog_codes/golang/grpc/go/proto-gens"
 )
 
 var (
