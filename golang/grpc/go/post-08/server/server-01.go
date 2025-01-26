@@ -7,8 +7,8 @@ import (
 	"log"
 	"net"
 
-	"github.com/grpc/grpc-go/examples/helloworld/helloworld"
-	"github.com/liuliqiang/blog-demos/microservices/rpc/grpc/go/post-05/interceptor"
+	"github.com/liuliqiang/blog_codes/golang/grpc/go/post-05/interceptor"
+	helloworld "github.com/liuliqiang/blog_codes/golang/grpc/go/proto-gens"
 
 	"google.golang.org/grpc"
 )

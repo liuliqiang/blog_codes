@@ -5,9 +5,9 @@ import (
 	"io"
 	"log"
 
-	"github.com/liuliqiang/blog-demos/microservices/rpc/grpc/go/post-06/proto-gens"
-
 	"google.golang.org/grpc"
+
+	protobuf "github.com/liuliqiang/blog_codes/golang/grpc/go/post-06/proto-gens"
 )
 
 func main() {
