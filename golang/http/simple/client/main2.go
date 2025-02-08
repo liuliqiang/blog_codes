@@ -1,8 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -17,17 +17,10 @@ func main() {
 			defer resp.Body.Close()
 
 			fmt.Println("Response status:", resp.Status)
+			fmt.Println("Connection Header:", resp.Header.Get("Connection"))
 
-			scanner := bufio.NewScanner(resp.Body)
-			for i := 0; scanner.Scan() && i < 5; i++ {
-				fmt.Println(scanner.Text())
-			}
-
-			if err := scanner.Err(); err != nil {
-				panic(err)
-			}
+			_, _ = io.ReadAll(resp.Body)
 		}()
-
 		time.Sleep(time.Millisecond * 500)
 	}
 }
