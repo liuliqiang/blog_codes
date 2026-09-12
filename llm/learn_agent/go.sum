@@ -1,0 +1,4 @@
+github.com/hashicorp/logutils v1.0.0 h1:dLEQVugN8vlakKOUE3ihGLTZJRB4j+M2cdTm/ORI65Y=
+github.com/hashicorp/logutils v1.0.0/go.mod h1:QIAnNjmIWmVIIkWDTG1z5v++HQmx9WQRO+LraFDTW64=
+github.com/liuliqiang/log4go v0.0.0-20260308134408-d66d1b0d0ace h1:OEia+7xKhf0abzmuPi6qGXoQyiH2EkOL/iNI6xN/OAo=
+github.com/liuliqiang/log4go v0.0.0-20260308134408-d66d1b0d0ace/go.mod h1:5cVfZ93KcWEhcqBJ6aghq9iH86C+ra8an2zpyHBLT9E=
