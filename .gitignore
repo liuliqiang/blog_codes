@@ -69,3 +69,4 @@ mygentool
 greet.so
 
 node_modules
+.env
