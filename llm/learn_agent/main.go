@@ -18,7 +18,7 @@ func main() {
 	llmClient := deepseek.NewDeepseekClient(llmOpts)
 
 	rec := trace.NewRecorder()
-	agent := agentloop.NewAgent(llmClient, agentloop.NewStdoutRecorder(), rec)
+	agent := agentloop.NewAgent(llmClient, rec)
 
 	err := agent.RunLoop(context.Background(), []agentloop.Message{
 		{

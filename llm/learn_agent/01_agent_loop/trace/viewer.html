@@ -109,6 +109,22 @@
   .kind .dur { margin-left: auto; font: 12px var(--mono); text-transform: none; letter-spacing: 0; color: var(--muted); }
 
   .prose { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-family: inherit; }
+
+  /* rendered markdown (assistant text) */
+  .md { overflow-wrap: anywhere; }
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md p, .md ul, .md ol, .md blockquote, .md pre { margin: 0 0 10px; }
+  .md h1, .md h2, .md h3, .md h4 { margin: 14px 0 6px; line-height: 1.3; font-weight: 600; text-wrap: balance; }
+  .md h1 { font-size: 18px; } .md h2 { font-size: 16px; } .md h3, .md h4 { font-size: 15px; }
+  .md ul, .md ol { padding-left: 24px; }
+  .md li { margin: 2px 0; }
+  .md blockquote { border-left: 3px solid var(--line); padding-left: 12px; color: var(--muted); }
+  .md code { font: 12.5px var(--mono); background: var(--bg); border-radius: 3px; padding: 1px 5px; }
+  .md pre { background: var(--bg); border-radius: 4px; padding: 8px 10px; overflow-x: auto; }
+  .md pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.5; white-space: pre; }
+  .md a { color: var(--accent); }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
   pre.mono {
     margin: 0; font: 12.5px/1.5 var(--mono);
     white-space: pre; overflow-x: auto;
@@ -168,6 +184,59 @@
     return isNaN(d) ? "–" : d.toLocaleString();
   }
   function lines(s) { return s ? s.split("\n").length : 0; }
+
+  // Minimal markdown -> HTML. Input is escaped first, so raw HTML in the text is shown, never run.
+  function escapeHTML(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function inline(s) {
+    var codes = [];
+    s = s.replace(/`([^`]+)`/g, function (_, c) { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000"; });
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+         .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, "$1<em>$2</em>")
+         .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return "<code>" + codes[i] + "</code>"; });
+  }
+  function markdown(src, escaped) {
+    var ls = (escaped ? src : escapeHTML(src || "")).split("\n"), out = [], i = 0, m;
+    function para(buf) { if (buf.length) out.push("<p>" + inline(buf.join(" ")) + "</p>"); }
+    var buf = [];
+    while (i < ls.length) {
+      var line = ls[i];
+      if ((m = /^\s*```/.exec(line))) {                       // fenced code
+        para(buf); buf = []; var code = []; i++;
+        while (i < ls.length && !/^\s*```/.test(ls[i])) code.push(ls[i++]);
+        i++; out.push("<pre><code>" + code.join("\n") + "</code></pre>"); continue;
+      }
+      if (/^(    |\t)/.test(line) && !buf.length) {           // indented code
+        var ind = [];
+        while (i < ls.length && /^(    |\t)/.test(ls[i])) ind.push(ls[i++].replace(/^(    |\t)/, ""));
+        out.push("<pre><code>" + ind.join("\n") + "</code></pre>"); continue;
+      }
+      if ((m = /^(#{1,4})\s+(.*)$/.exec(line))) {             // heading
+        para(buf); buf = []; out.push("<h" + m[1].length + ">" + inline(m[2]) + "</h" + m[1].length + ">"); i++; continue;
+      }
+      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { para(buf); buf = []; out.push("<hr>"); i++; continue; }
+      if ((m = /^\s*([-*+]|\d+\.)\s+/.exec(line))) {         // list
+        para(buf); buf = []; var tag = /\d/.test(m[1]) ? "ol" : "ul", items = [];
+        while (i < ls.length && (m = /^\s*([-*+]|\d+\.)\s+(.*)$/.exec(ls[i]))) {
+          var item = m[2]; i++;
+          while (i < ls.length && /^\s{2,}\S/.test(ls[i]) && !/^\s*([-*+]|\d+\.)\s+/.test(ls[i])) item += " " + ls[i++].trim();
+          items.push("<li>" + inline(item) + "</li>");
+        }
+        out.push("<" + tag + ">" + items.join("") + "</" + tag + ">"); continue;
+      }
+      if (/^\s*&gt;/.test(line)) {                            // blockquote
+        para(buf); buf = []; var q = [];
+        while (i < ls.length && /^\s*&gt;/.test(ls[i])) q.push(ls[i++].replace(/^\s*&gt;\s?/, ""));
+        out.push("<blockquote>" + markdown(q.join("\n"), true) + "</blockquote>"); continue;
+      }
+      if (!line.trim()) { para(buf); buf = []; i++; continue; }
+      buf.push(line.trim()); i++;
+    }
+    para(buf);
+    return out.join("");
+  }
   function firstLine(s) { return (s || "").split("\n")[0].slice(0, 160); }
 
   // header
@@ -229,7 +298,8 @@
       case "text":
         card = el("div", "ev text");
         card.appendChild(el("div", "kind", "assistant"));
-        card.appendChild(el("pre", "prose", e.text));
+        var md = el("div", "md"); md.innerHTML = markdown(e.text);
+        card.appendChild(md);
         return card;
       case "reasoning":
         card = el("div", "ev reasoning");
