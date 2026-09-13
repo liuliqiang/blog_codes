@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	agentloop "github.com/liuliqiang/llmagent/03_permission"
-	"github.com/liuliqiang/llmagent/03_permission/llm/deepseek"
-	"github.com/liuliqiang/llmagent/03_permission/trace"
+	agentloop "github.com/liuliqiang/llmagent/04_hook"
+	"github.com/liuliqiang/llmagent/04_hook/llm/deepseek"
+	"github.com/liuliqiang/llmagent/04_hook/trace"
 )
 
 const traceHTMLPath = "trace.html"
@@ -18,7 +18,12 @@ func main() {
 	llmClient := deepseek.NewDeepseekClient(llmOpts)
 
 	rec := trace.NewRecorder()
-	agent := agentloop.NewAgent(llmClient, rec)
+	hooks := new(agentloop.Hooks).
+		OnPreToolUse(agentloop.LogToolUseHook()).
+		OnPreToolUse(agentloop.PermissionHook()). // last, so it checks the final input
+		OnPostToolUse(agentloop.LargeOutputHook()).
+		OnStop(agentloop.SummaryHook())
+	agent := agentloop.NewAgent(llmClient, hooks, rec)
 
 	err := agent.RunLoop(context.Background(), []agentloop.Message{
 		{
