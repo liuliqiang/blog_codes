@@ -33,10 +33,15 @@ type Message struct {
 	Content interface{}
 }
 
+// ToolHandler executes a tool locally with the input the LLM produced.
+// The returned string is fed back to the LLM as the tool result.
+type ToolHandler func(ctx context.Context, input map[string]interface{}) (string, error)
+
 type Tool struct {
 	Name        string
 	Description string
 	InputSchema map[string]interface{}
+	Handler     ToolHandler `json:"-"`
 }
 
 /* vvvvvvvvvvvvvvvvvvvvv SendMessagesOpts vvvvvvvvvvvvvvvvvvvvv */

@@ -1,20 +1,26 @@
 package agentloop
 
-import (
-	"context"
-	"fmt"
-)
+import "context"
+
+const defaultSystemPrompt = "You are a senior software engineer."
 
 type Agent interface {
 	RunLoop(ctx context.Context, messages []Message) error
 }
 
-func NewAgent(llmClient LLMClient) Agent {
-	return &agent{
+func NewAgent(llmClient LLMClient, recorders ...Recorder) Agent {
+	a := &agent{
 		currLoop:  0,
 		maxLoop:   -1,
 		llmClient: llmClient,
+		recorders: recorders,
 	}
+	a.tools = a.generateTools()
+	a.toolIndex = make(map[string]Tool, len(a.tools))
+	for _, tool := range a.tools {
+		a.toolIndex[tool.Name] = tool
+	}
+	return a
 }
 
 type agent struct {
@@ -23,10 +29,24 @@ type agent struct {
 
 	messages  []Message
 	llmClient LLMClient
+
+	tools     []Tool
+	toolIndex map[string]Tool
+
+	recorders []Recorder
 }
 
-func (a *agent) RunLoop(ctx context.Context, messages []Message) error {
+func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
 	a.messages = messages
+
+	for _, r := range a.recorders {
+		r.OnStart(a.llmClient.GetModel(), defaultSystemPrompt, messages)
+	}
+	defer func() {
+		for _, r := range a.recorders {
+			r.OnEnd(err)
+		}
+	}()
 
 	for a.shouldContinue() {
 		resp, err := a.llmClient.SendMessages(
@@ -34,16 +54,18 @@ func (a *agent) RunLoop(ctx context.Context, messages []Message) error {
 			a.llmClient.GetModel(),
 			Message{
 				Role:    MessageRoleSystem,
-				Content: "You are a senior software engineer.",
+				Content: defaultSystemPrompt,
 			},
 			a.messages,
-			nil,
+			a.tools,
 			NewSendMessagesOpts())
 		if err != nil {
 			return err
 		}
 
-		a.showResponse(resp)
+		for _, r := range a.recorders {
+			r.OnResponse(a.turn(), resp)
+		}
 
 		a.messages = append(a.messages, Message{
 			Role:    MessageRoleAssistant,
@@ -55,59 +77,21 @@ func (a *agent) RunLoop(ctx context.Context, messages []Message) error {
 			return nil
 		}
 
-		if err := a.runTools(toolUses); err != nil {
-			return err
-		}
+		a.runTools(ctx, toolUses)
 
 		a.currLoop++
 	}
 	return nil
 }
 
-func (a *agent) runTools(toolUses []MessagesBlock) error {
-	var results []MessagesBlock
-	for _, toolUse := range toolUses {
-		output, err := runBash(toolUse.Input["command"].(string))
-		if err != nil {
-			return err
-		}
-
-		results = append(results, MessagesBlock{
-			Type:      MessagesBlockTypeToolResult,
-			ToolUseID: toolUse.ID,
-			Content:   output,
-		})
-	}
-
-	a.messages = append(a.messages, Message{
-		Role:    MessageRoleUser,
-		Content: results,
-	})
-	return nil
-}
-
-func (a *agent) showResponse(resp SendMessagesResponse) {
-	for _, block := range resp.Content {
-		switch block.Type {
-		case MessagesBlockTypeText:
-			fmt.Printf("Text: %s\n", block.Text)
-		case MessagesBlockTypeReasoning:
-			fmt.Printf("Assistant (reasoning): %s\n", block.Text)
-		case MessagesBlockTypeToolUse:
-			fmt.Printf("Assistant (tool use): %s %v\n", block.Name, block.Input)
-		case MessagesBlockTypeToolResult:
-			fmt.Printf("Assistant (tool result): %s %s\n", block.ToolUseID, block.Content)
-		default:
-			fmt.Printf("Unknown block type: %s\n", block.Type)
-		}
-	}
-}
-
-/* vvvvvvvvvvvvvvvv agentLoop control logics vvvvvvvvvvvvvvvv */
-
 func (a *agent) resetLoop() bool {
 	a.currLoop = 0
 	return true
+}
+
+// turn is the 1-based index of the LLM call currently being processed.
+func (a *agent) turn() int {
+	return a.currLoop + 1
 }
 
 func (a *agent) shouldContinue() bool {
