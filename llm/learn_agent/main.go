@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	agentloop "github.com/liuliqiang/llmagent/04_hook"
-	"github.com/liuliqiang/llmagent/04_hook/llm/deepseek"
-	"github.com/liuliqiang/llmagent/04_hook/trace"
+	agentloop "github.com/liuliqiang/llmagent/05_todo_writer"
+	"github.com/liuliqiang/llmagent/05_todo_writer/llm/deepseek"
+	"github.com/liuliqiang/llmagent/05_todo_writer/trace"
 )
 
 const traceHTMLPath = "trace.html"
@@ -28,7 +28,7 @@ func main() {
 	err := agent.RunLoop(context.Background(), []agentloop.Message{
 		{
 			Role:    agentloop.MessageRoleUser,
-			Content: "Write a bash script to print 'Hello, World!' to the console.",
+			Content: "Review current project and check if there are any tasks that can be automated. If so, create a list of those tasks and suggest ways to automate them.",
 		},
 	})
 	if err != nil {
