@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	agentloop "github.com/liuliqiang/llmagent/05_todo_writer"
-	"github.com/liuliqiang/llmagent/05_todo_writer/llm/deepseek"
-	"github.com/liuliqiang/llmagent/05_todo_writer/trace"
+	agentloop "github.com/liuliqiang/llmagent/06_subagent"
+	"github.com/liuliqiang/llmagent/06_subagent/llm/deepseek"
+	"github.com/liuliqiang/llmagent/06_subagent/trace"
 )
 
 const traceHTMLPath = "trace.html"
@@ -28,7 +28,7 @@ func main() {
 	err := agent.RunLoop(context.Background(), []agentloop.Message{
 		{
 			Role:    agentloop.MessageRoleUser,
-			Content: "Review current project and check if there are any tasks that can be automated. If so, create a list of those tasks and suggest ways to automate them.",
+			Content: "help me review this MR, and comment on any issues I should be aware of: https://github.com/liuliqiang/blog_codes/pull/6. It's better to fetch the MR diff with subagent, and then review the diff with another subagent.",
 		},
 	})
 	if err != nil {
