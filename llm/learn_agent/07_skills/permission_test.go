@@ -1,0 +1,265 @@
+package agentloop
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestIsInWorkspace(t *testing.T) {
+	ws := t.TempDir()
+	outside := t.TempDir()
+	os.Mkdir(filepath.Join(ws, "sub"), 0o755)
+	os.WriteFile(filepath.Join(ws, "a.txt"), nil, 0o644)
+	os.WriteFile(filepath.Join(outside, "secret.txt"), nil, 0o644)
+	// symlink inside the workspace that escapes it
+	os.Symlink(outside, filepath.Join(ws, "escape"))
+	t.Chdir(ws)
+
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"a.txt", true},
+		{"./a.txt", true},
+		{"sub/new.txt", true},  // not yet existing, still inside
+		{"sub/../a.txt", true}, // cleans back inside
+		{".", true},
+		{ws, true},
+		{filepath.Join(ws, "sub", "x"), true},
+		{"..", false},
+		{"../x.txt", false},
+		{"sub/../../x.txt", false},
+		{"/etc/passwd", false},
+		{filepath.Join(outside, "secret.txt"), false},
+		{"escape/secret.txt", false},   // symlink pointing outside
+		{"escape/new.txt", false},      // new file under escaping symlink
+		{ws + "-sibling/a.txt", false}, // shares prefix string, different dir
+	}
+	for _, c := range cases {
+		if got := isInWorkspace(c.path); got != c.want {
+			t.Errorf("isInWorkspace(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestIsCommandAllowed(t *testing.T) {
+	cases := []struct {
+		command string
+		want    bool
+	}{
+		{"ls -la", true},
+		{"echo hello > out.txt", true},
+		{"chmod 755 hello.sh", true},
+		{"cat /etc/hosts", true},        // reading /etc is fine, writing is not
+		{"echo warm", true},             // "rm" without trailing space
+		{"grep rm file.txt", false},     // "rm " matches even as a grep argument
+		{"sudo", false},                 // exact deny list
+		{"rm -rf /", false},             // exact deny list
+		{"rm file.txt", false},          // "rm " fragment
+		{"cd /tmp && rm -f x", false},   // fragment buried in a compound command
+		{"echo x > /etc/hosts", false},  // "> /etc/" fragment
+		{"chmod 777 hello.sh", false},   // "chmod 777" fragment
+		{"ls | xargs chmod 777", false}, // fragment after a pipe
+	}
+	for _, c := range cases {
+		if got := isCommandAllowed(c.command); got != c.want {
+			t.Errorf("isCommandAllowed(%q) = %v, want %v", c.command, got, c.want)
+		}
+	}
+}
+
+func TestCheckRules(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+
+	cases := []struct {
+		name  string
+		tool  MessagesBlock
+		allow bool
+	}{
+		{"read inside", MessagesBlock{Name: "read_file", Input: map[string]interface{}{"path": "a.txt"}}, true},
+		{"write outside", MessagesBlock{Name: "write_file", Input: map[string]interface{}{"path": "/etc/passwd", "content": "x"}}, false},
+		{"edit missing path", MessagesBlock{Name: "edit_file", Input: map[string]interface{}{}}, false},
+		{"path not a string", MessagesBlock{Name: "read_file", Input: map[string]interface{}{"path": 42}}, false},
+		{"safe command", MessagesBlock{Name: "run_bash", Input: map[string]interface{}{"command": "cat a.txt"}}, true},
+		{"denied command", MessagesBlock{Name: "run_bash", Input: map[string]interface{}{"command": "rm -rf ."}}, false},
+		{"command missing", MessagesBlock{Name: "run_bash", Input: map[string]interface{}{}}, false},
+		{"unruled tool", MessagesBlock{Name: "list_directory", Input: map[string]interface{}{"path": "/"}}, true},
+	}
+	for _, c := range cases {
+		allow, msg := checkRules(c.tool)
+		if allow != c.allow {
+			t.Errorf("%s: allow = %v, want %v", c.name, allow, c.allow)
+		}
+		if allow && msg != "" || !allow && msg == "" {
+			t.Errorf("%s: message = %q for allow=%v", c.name, msg, allow)
+		}
+	}
+}
+
+func TestCheckUserAllow(t *testing.T) {
+	origIn, origOut := promptIn, promptOut
+	t.Cleanup(func() { promptIn, promptOut = origIn, origOut })
+
+	tool := MessagesBlock{Name: "run_bash", Input: map[string]interface{}{"command": "cat a.txt"}}
+	cases := []struct {
+		answer string
+		want   bool
+	}{
+		{"y\n", true},
+		{"Y\n", true},
+		{"yes\n", true},
+		{"  yes  \n", true},
+		{"n\n", false},
+		{"no\n", false},
+		{"\n", false}, // enter = default deny
+		{"", false},   // EOF = deny
+		{"whatever\n", false},
+	}
+	for _, c := range cases {
+		var out bytes.Buffer
+		promptIn, promptOut = strings.NewReader(c.answer), &out
+		if got := checkUserAllow(withAgentName(context.Background(), "main"), tool); got != c.want {
+			t.Errorf("answer %q: got %v, want %v", c.answer, got, c.want)
+		}
+		if !strings.Contains(out.String(), `"run_bash"`) || !strings.Contains(out.String(), `"command": "cat a.txt"`) || !strings.Contains(out.String(), "[y/N]") {
+			t.Errorf("prompt missing tool details: %q", out.String())
+		}
+		if !strings.HasPrefix(out.String(), "\n[main] wants to run tool") {
+			t.Errorf("prompt must say which agent is asking: %q", out.String())
+		}
+	}
+}
+
+func TestCheckUserAllow_NamesAskingAgent(t *testing.T) {
+	origIn, origOut := promptIn, promptOut
+	t.Cleanup(func() { promptIn, promptOut = origIn, origOut })
+	tool := MessagesBlock{Name: "run_bash", Input: map[string]interface{}{"command": "cat a.txt"}}
+
+	for _, c := range []struct {
+		ctx  context.Context
+		want string
+	}{
+		{withAgentName(context.Background(), "subagent"), "[subagent] wants"},
+		{context.Background(), "[agent] wants"}, // no name in ctx falls back to a generic label
+	} {
+		var out bytes.Buffer
+		promptIn, promptOut = strings.NewReader("y\n"), &out
+		checkUserAllow(c.ctx, tool)
+		if !strings.Contains(out.String(), c.want) {
+			t.Errorf("prompt = %q, want it to contain %q", out.String(), c.want)
+		}
+	}
+}
+
+// yesReader answers "y" to every prompt. Each Read yields exactly one line so a
+// fresh bufio.Reader per prompt never swallows the answers meant for later ones.
+type yesReader struct{}
+
+func (yesReader) Read(p []byte) (int, error) { return copy(p, "y\n"), nil }
+
+// autoAllow makes checkUserAllow approve everything for the duration of the test.
+func autoAllow(t *testing.T) {
+	t.Helper()
+	origIn, origOut := promptIn, promptOut
+	promptIn, promptOut = yesReader{}, io.Discard
+	t.Cleanup(func() { promptIn, promptOut = origIn, origOut })
+}
+
+func TestCheckToolPermission(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	origIn, origOut := promptIn, promptOut
+	t.Cleanup(func() { promptIn, promptOut = origIn, origOut })
+	promptOut = io.Discard
+
+	// rule denies before the user is even asked
+	promptIn = yesReader{}
+	allowed, msg := checkToolPermission(context.Background(), MessagesBlock{Name: "run_bash", Input: map[string]interface{}{"command": "rm -rf ."}})
+	if allowed || !strings.Contains(msg, "not allowed") {
+		t.Errorf("rule denial: allowed=%v msg=%q", allowed, msg)
+	}
+
+	// rule passes, user says no
+	promptIn = strings.NewReader("n\n")
+	allowed, msg = checkToolPermission(context.Background(), MessagesBlock{Name: "run_bash", Input: map[string]interface{}{"command": "cat a.txt"}})
+	if allowed || msg != "User denied permission to run the tool." {
+		t.Errorf("user denial: allowed=%v msg=%q", allowed, msg)
+	}
+
+	// rule passes, user says yes
+	promptIn = yesReader{}
+	allowed, msg = checkToolPermission(context.Background(), MessagesBlock{Name: "run_bash", Input: map[string]interface{}{"command": "cat a.txt"}})
+	if !allowed || msg != "" {
+		t.Errorf("approved: allowed=%v msg=%q", allowed, msg)
+	}
+}
+
+func TestIsAllowListed(t *testing.T) {
+	bash := func(cmd string) MessagesBlock {
+		return MessagesBlock{Name: "run_bash", Input: map[string]interface{}{"command": cmd}}
+	}
+	cases := []struct {
+		name string
+		tool MessagesBlock
+		want bool
+	}{
+		{"whitelisted tool", MessagesBlock{Name: "todo_write", Input: map[string]interface{}{"todos": []interface{}{}}}, true},
+		{"other tool", MessagesBlock{Name: "read_file", Input: map[string]interface{}{"path": "ls"}}, false},
+		{"bare command", bash("ls"), true},
+		{"command with args", bash("ls -la /tmp"), true},
+		{"leading spaces", bash("  pwd  "), true},
+		{"not whitelisted", bash("cat /etc/hosts"), false},
+		{"prefix is not a match", bash("lsof -i"), false},
+		{"chained with ;", bash("ls; rm -rf /"), false},
+		{"chained with &&", bash("ls && rm -rf /"), false},
+		{"piped", bash("ls | xargs rm"), false},
+		{"redirect", bash("ls > /etc/x"), false},
+		{"subshell", bash("ls $(rm -rf /)"), false},
+		{"backticks", bash("ls `rm -rf /`"), false},
+		{"newline", bash("ls\nrm -rf /"), false},
+		{"empty", bash("   "), false},
+		{"missing command", MessagesBlock{Name: "run_bash", Input: map[string]interface{}{}}, false},
+	}
+	for _, c := range cases {
+		if got := isAllowListed(c.tool); got != c.want {
+			t.Errorf("%s: isAllowListed = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestCheckToolPermission_AllowListSkipsPrompt(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	origIn, origOut := promptIn, promptOut
+	t.Cleanup(func() { promptIn, promptOut = origIn, origOut })
+	var out bytes.Buffer
+	promptIn, promptOut = strings.NewReader(""), &out // any prompt would be answered EOF = deny
+
+	allowed, msg := checkToolPermission(context.Background(), MessagesBlock{Name: "run_bash", Input: map[string]interface{}{"command": "ls -la"}})
+	if !allowed || msg != "" || out.Len() != 0 {
+		t.Errorf("whitelisted command: allowed=%v msg=%q prompted=%q", allowed, msg, out.String())
+	}
+
+	allowed, msg = checkToolPermission(context.Background(), MessagesBlock{Name: "todo_write", Input: map[string]interface{}{"todos": []interface{}{}}})
+	if !allowed || msg != "" || out.Len() != 0 {
+		t.Errorf("whitelisted tool: allowed=%v msg=%q prompted=%q", allowed, msg, out.String())
+	}
+
+	// chained command falls through to the rules and is rejected there
+	allowed, msg = checkToolPermission(context.Background(), MessagesBlock{Name: "run_bash", Input: map[string]interface{}{"command": "ls; rm -rf /"}})
+	if allowed || !strings.Contains(msg, "not allowed") {
+		t.Errorf("chained command: allowed=%v msg=%q", allowed, msg)
+	}
+
+	// non-whitelisted command still reaches the prompt
+	allowed, _ = checkToolPermission(context.Background(), MessagesBlock{Name: "run_bash", Input: map[string]interface{}{"command": "cat a.txt"}})
+	if allowed || !strings.Contains(out.String(), "[y/N]") {
+		t.Errorf("non-whitelisted command should prompt: allowed=%v out=%q", allowed, out.String())
+	}
+}
