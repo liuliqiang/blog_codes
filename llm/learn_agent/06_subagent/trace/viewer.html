@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Trace</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --surface: #ffffff;
+    --ink: #1c2430;
+    --muted: #64707f;
+    --line: #d9dfe6;
+    --rail: #c3cbd5;
+    --accent: #2e5bda;
+    --accent-soft: #e8eefc;
+    --think: #7c6fb8;
+    --think-soft: #f0eefa;
+    --user-soft: #eef1f4;
+    --err: #c2410c;
+    --err-soft: #fdeee6;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11151b;
+      --surface: #191f27;
+      --ink: #e4e9f0;
+      --muted: #8d98a6;
+      --line: #2a323d;
+      --rail: #3a4451;
+      --accent: #7c9bff;
+      --accent-soft: #1b2540;
+      --think: #a99ce6;
+      --think-soft: #23213a;
+      --user-soft: #1f2630;
+      --err: #ff8a5b;
+      --err-soft: #3a2118;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 var(--sans);
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  header { margin-bottom: 32px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 6px 22px;
+    color: var(--muted); font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  .meta b { color: var(--ink); font-weight: 500; }
+  .meta code { font-family: var(--mono); font-size: 12.5px; }
+
+  details.sys { margin-top: 14px; font-size: 13px; color: var(--muted); }
+  details.sys summary { cursor: pointer; }
+  details.sys pre { margin: 6px 0 0; }
+
+  /* timeline */
+  .timeline { position: relative; padding-left: 56px; }
+  .timeline::before {
+    content: ""; position: absolute; left: 19px; top: 8px; bottom: 8px;
+    width: 2px; background: var(--rail);
+  }
+  .turn { position: relative; margin-bottom: 28px; }
+  .turn-mark {
+    position: absolute; left: -56px; top: 0;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--rail);
+    display: grid; place-items: center;
+    font: 500 12px var(--mono); color: var(--muted);
+  }
+  .turn.user .turn-mark { border-color: var(--ink); color: var(--ink); }
+  .turn.error .turn-mark { border-color: var(--err); color: var(--err); }
+  .turn-label {
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); line-height: 40px; height: 40px; margin-bottom: 4px;
+  }
+  .turn-label span { margin-left: 12px; font-variant-numeric: tabular-nums; }
+
+  .events { display: flex; flex-direction: column; gap: 10px; }
+  .ev {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .ev.user { background: var(--user-soft); border-color: transparent; }
+  .ev.text { }
+  .ev.reasoning { background: var(--think-soft); border-color: transparent; }
+  .ev.error { background: var(--err-soft); border-color: var(--err); }
+  .ev.tool { border-left: 3px solid var(--accent); }
+
+  .kind {
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 6px;
+    display: flex; gap: 10px; align-items: baseline;
+  }
+  .ev.reasoning .kind { color: var(--think); }
+  .ev.error .kind { color: var(--err); }
+  .ev.tool .kind { color: var(--accent); }
+  .kind .dur { margin-left: auto; font: 12px var(--mono); text-transform: none; letter-spacing: 0; color: var(--muted); }
+
+  .prose { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-family: inherit; }
+
+  /* rendered markdown (assistant text) */
+  .md { overflow-wrap: anywhere; }
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md p, .md ul, .md ol, .md blockquote, .md pre { margin: 0 0 10px; }
+  .md h1, .md h2, .md h3, .md h4 { margin: 14px 0 6px; line-height: 1.3; font-weight: 600; text-wrap: balance; }
+  .md h1 { font-size: 18px; } .md h2 { font-size: 16px; } .md h3, .md h4 { font-size: 15px; }
+  .md ul, .md ol { padding-left: 24px; }
+  .md li { margin: 2px 0; }
+  .md blockquote { border-left: 3px solid var(--line); padding-left: 12px; color: var(--muted); }
+  .md code { font: 12.5px var(--mono); background: var(--bg); border-radius: 3px; padding: 1px 5px; }
+  .md pre { background: var(--bg); border-radius: 4px; padding: 8px 10px; overflow-x: auto; }
+  .md pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.5; white-space: pre; }
+  .md a { color: var(--accent); }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+  pre.mono {
+    margin: 0; font: 12.5px/1.5 var(--mono);
+    white-space: pre; overflow-x: auto;
+    background: var(--bg); border-radius: 4px; padding: 8px 10px;
+  }
+  .ev.tool pre.mono { background: var(--accent-soft); }
+
+  .tool-name { font: 500 13px var(--mono); color: var(--ink); text-transform: none; letter-spacing: 0; }
+  .call-id { font: 11px var(--mono); color: var(--muted); text-transform: none; letter-spacing: 0; }
+
+  .result { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .result.failed pre.mono { background: var(--err-soft); }
+
+  details.fold summary {
+    cursor: pointer; color: var(--muted); font-size: 13px; list-style: none;
+    display: flex; gap: 8px; align-items: baseline;
+  }
+  details.fold summary::before { content: "▸"; font-size: 11px; }
+  details.fold[open] summary::before { content: "▾"; }
+  details.fold summary::-webkit-details-marker { display: none; }
+  details.fold summary .peek { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  details.fold > :not(summary) { margin-top: 8px; }
+  details.fold summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+  .empty { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Agent Trace</h1>
+    <div class="meta" id="meta"></div>
+    <details class="sys" id="sys"></details>
+  </header>
+  <section class="timeline" id="timeline"></section>
+</main>
+
+<script type="application/json" id="trace">/*__TRACE_JSON__*/</script>
+<script>
+(function () {
+  var trace = JSON.parse(document.getElementById("trace").textContent);
+  var events = trace.events || [];
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function fmtMs(ms) {
+    if (ms < 1000) return ms + " ms";
+    if (ms < 60000) return (ms / 1000).toFixed(2) + " s";
+    return Math.floor(ms / 60000) + " m " + Math.round((ms % 60000) / 1000) + " s";
+  }
+  function fmtTime(iso) {
+    var d = new Date(iso);
+    return isNaN(d) ? "–" : d.toLocaleString();
+  }
+  function lines(s) { return s ? s.split("\n").length : 0; }
+
+  // Minimal markdown -> HTML. Input is escaped first, so raw HTML in the text is shown, never run.
+  function escapeHTML(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function inline(s) {
+    var codes = [];
+    s = s.replace(/`([^`]+)`/g, function (_, c) { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000"; });
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+         .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, "$1<em>$2</em>")
+         .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return "<code>" + codes[i] + "</code>"; });
+  }
+  function markdown(src, escaped) {
+    var ls = (escaped ? src : escapeHTML(src || "")).split("\n"), out = [], i = 0, m;
+    function para(buf) { if (buf.length) out.push("<p>" + inline(buf.join(" ")) + "</p>"); }
+    var buf = [];
+    while (i < ls.length) {
+      var line = ls[i];
+      if ((m = /^\s*```/.exec(line))) {                       // fenced code
+        para(buf); buf = []; var code = []; i++;
+        while (i < ls.length && !/^\s*```/.test(ls[i])) code.push(ls[i++]);
+        i++; out.push("<pre><code>" + code.join("\n") + "</code></pre>"); continue;
+      }
+      if (/^(    |\t)/.test(line) && !buf.length) {           // indented code
+        var ind = [];
+        while (i < ls.length && /^(    |\t)/.test(ls[i])) ind.push(ls[i++].replace(/^(    |\t)/, ""));
+        out.push("<pre><code>" + ind.join("\n") + "</code></pre>"); continue;
+      }
+      if ((m = /^(#{1,4})\s+(.*)$/.exec(line))) {             // heading
+        para(buf); buf = []; out.push("<h" + m[1].length + ">" + inline(m[2]) + "</h" + m[1].length + ">"); i++; continue;
+      }
+      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { para(buf); buf = []; out.push("<hr>"); i++; continue; }
+      if ((m = /^\s*([-*+]|\d+\.)\s+/.exec(line))) {         // list
+        para(buf); buf = []; var tag = /\d/.test(m[1]) ? "ol" : "ul", items = [];
+        while (i < ls.length && (m = /^\s*([-*+]|\d+\.)\s+(.*)$/.exec(ls[i]))) {
+          var item = m[2]; i++;
+          while (i < ls.length && /^\s{2,}\S/.test(ls[i]) && !/^\s*([-*+]|\d+\.)\s+/.test(ls[i])) item += " " + ls[i++].trim();
+          items.push("<li>" + inline(item) + "</li>");
+        }
+        out.push("<" + tag + ">" + items.join("") + "</" + tag + ">"); continue;
+      }
+      if (/^\s*&gt;/.test(line)) {                            // blockquote
+        para(buf); buf = []; var q = [];
+        while (i < ls.length && /^\s*&gt;/.test(ls[i])) q.push(ls[i++].replace(/^\s*&gt;\s?/, ""));
+        out.push("<blockquote>" + markdown(q.join("\n"), true) + "</blockquote>"); continue;
+      }
+      if (!line.trim()) { para(buf); buf = []; i++; continue; }
+      buf.push(line.trim()); i++;
+    }
+    para(buf);
+    return out.join("");
+  }
+  function firstLine(s) { return (s || "").split("\n")[0].slice(0, 160); }
+
+  // header
+  var started = new Date(trace.started_at), ended = new Date(trace.ended_at);
+  var total = (isNaN(started) || isNaN(ended)) ? null : ended - started;
+  var turns = 0, toolCalls = 0, failed = false;
+  events.forEach(function (e) {
+    if (e.turn > turns) turns = e.turn;
+    if (e.kind === "tool_use") toolCalls++;
+    if (e.kind === "error") failed = true;
+  });
+  var meta = document.getElementById("meta");
+  function metaItem(label, value, mono) {
+    var n = el("span"); n.appendChild(el("span", null, label + " "));
+    var v = el(mono ? "code" : "b", null, value); n.appendChild(v); meta.appendChild(n);
+  }
+  metaItem("model", trace.model || "–", true);
+  metaItem("started", fmtTime(trace.started_at));
+  metaItem("duration", total == null ? "–" : fmtMs(total));
+  metaItem("turns", String(turns));
+  metaItem("tool calls", String(toolCalls));
+  metaItem("status", failed ? "failed" : "completed");
+
+  var sys = document.getElementById("sys");
+  if (trace.system_prompt) {
+    sys.appendChild(el("summary", null, "system prompt"));
+    sys.appendChild(el("pre", "prose", trace.system_prompt));
+  } else {
+    sys.hidden = true;
+  }
+
+  // pair every tool_result with its tool_use by call id
+  var resultById = {};
+  events.forEach(function (e) { if (e.kind === "tool_result") resultById[e.tool_id] = e; });
+
+  // group by turn, preserving order
+  var groups = [], byTurn = {};
+  events.forEach(function (e) {
+    if (e.kind === "tool_result") return;
+    if (!byTurn[e.turn]) { byTurn[e.turn] = { turn: e.turn, events: [] }; groups.push(byTurn[e.turn]); }
+    byTurn[e.turn].events.push(e);
+  });
+
+  function foldable(peekText, body, open) {
+    var d = el("details", "fold"); if (open) d.open = true;
+    var s = el("summary"); s.appendChild(el("span", "peek", peekText)); d.appendChild(s);
+    d.appendChild(body);
+    return d;
+  }
+
+  function renderEvent(e) {
+    var card;
+    switch (e.kind) {
+      case "user":
+        card = el("div", "ev user");
+        card.appendChild(el("div", "kind", "user"));
+        card.appendChild(el("pre", "prose", e.text));
+        return card;
+      case "text":
+        card = el("div", "ev text");
+        card.appendChild(el("div", "kind", "assistant"));
+        var md = el("div", "md"); md.innerHTML = markdown(e.text);
+        card.appendChild(md);
+        return card;
+      case "reasoning":
+        card = el("div", "ev reasoning");
+        card.appendChild(el("div", "kind", "reasoning"));
+        card.appendChild(foldable(firstLine(e.text), el("pre", "prose", e.text), false));
+        return card;
+      case "error":
+        card = el("div", "ev error");
+        card.appendChild(el("div", "kind", "error"));
+        card.appendChild(el("pre", "prose", e.text));
+        return card;
+      case "tool_use":
+        card = el("div", "ev tool");
+        var head = el("div", "kind");
+        head.appendChild(el("span", null, "tool"));
+        head.appendChild(el("span", "tool-name", e.tool_name));
+        if (e.tool_id) head.appendChild(el("span", "call-id", e.tool_id));
+        var res = resultById[e.tool_id];
+        if (res && res.duration_ms != null) head.appendChild(el("span", "dur", fmtMs(res.duration_ms)));
+        card.appendChild(head);
+        card.appendChild(el("pre", "mono", JSON.stringify(e.tool_input || {}, null, 2)));
+
+        var out = el("div", "result");
+        if (!res) {
+          out.appendChild(el("span", "empty", "no result recorded"));
+        } else {
+          var isErr = /^error:/.test(res.text || "");
+          if (isErr) out.classList.add("failed");
+          var body = el("pre", "mono", res.text || "");
+          var n = lines(res.text);
+          if (n > 20) {
+            out.appendChild(foldable(n + " lines · " + firstLine(res.text), body, false));
+          } else if (!res.text) {
+            out.appendChild(el("span", "empty", "(empty output)"));
+          } else {
+            out.appendChild(body);
+          }
+        }
+        card.appendChild(out);
+        return card;
+      default:
+        card = el("div", "ev");
+        card.appendChild(el("div", "kind", e.kind));
+        card.appendChild(el("pre", "prose", e.text || ""));
+        return card;
+    }
+  }
+
+  var timeline = document.getElementById("timeline");
+  if (!groups.length) {
+    timeline.appendChild(el("p", "empty", "No events were recorded."));
+  }
+  groups.forEach(function (g) {
+    var hasErr = g.events.some(function (e) { return e.kind === "error"; });
+    var t = el("div", "turn" + (g.turn === 0 ? " user" : "") + (hasErr ? " error" : ""));
+    t.appendChild(el("div", "turn-mark", g.turn === 0 ? "you" : String(g.turn)));
+    var label = el("div", "turn-label", g.turn === 0 ? "input" : "turn " + g.turn);
+    var first = g.events[0];
+    if (first && first.time) label.appendChild(el("span", null, new Date(first.time).toLocaleTimeString()));
+    t.appendChild(label);
+    var list = el("div", "events");
+    g.events.forEach(function (e) { list.appendChild(renderEvent(e)); });
+    t.appendChild(list);
+    timeline.appendChild(t);
+  });
+})();
+</script>
+</body>
+</html>
