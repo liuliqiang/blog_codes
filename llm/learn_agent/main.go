@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	agentloop "github.com/liuliqiang/llmagent/08_context_compact"
-	"github.com/liuliqiang/llmagent/08_context_compact/llm/deepseek"
-	"github.com/liuliqiang/llmagent/08_context_compact/trace"
+	agentloop "github.com/liuliqiang/llmagent/99_tag_iterate_version"
+	"github.com/liuliqiang/llmagent/99_tag_iterate_version/llm/deepseek"
+	"github.com/liuliqiang/llmagent/99_tag_iterate_version/trace"
 )
 
 const traceHTMLPath = "trace.html"
