@@ -66,3 +66,12 @@ func SummaryHook() StopHook {
 		return nil, nil
 	}
 }
+
+// CompactLogHook prints what each compaction summarized and kept.
+func CompactLogHook() CompactHook {
+	return func(ctx context.Context, compacted, kept []Message, summary string) (string, error) {
+		fmt.Fprintf(hookOut, "\033[90m[HOOK] Compact: %s summarized %d messages (~%d tokens) into ~%d tokens, kept %d\033[0m\n",
+			agentNameFrom(ctx), len(compacted), estimateTokens(compacted...), estimateTokens(summaryMessage(summary)), len(kept))
+		return summary, nil
+	}
+}

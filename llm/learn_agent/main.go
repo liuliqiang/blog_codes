@@ -22,7 +22,8 @@ func main() {
 		OnPreToolUse(agentloop.LogToolUseHook()).
 		OnPreToolUse(agentloop.PermissionHook()). // last, so it checks the final input
 		OnPostToolUse(agentloop.LargeOutputHook()).
-		OnStop(agentloop.SummaryHook())
+		OnStop(agentloop.SummaryHook()).
+		OnCompact(agentloop.CompactLogHook())
 	agent := agentloop.NewAgent(llmClient, hooks, rec)
 
 	err := agent.RunLoop(context.Background(), []agentloop.Message{

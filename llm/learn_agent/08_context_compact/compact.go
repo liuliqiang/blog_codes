@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"sort"
 	"strings"
 
@@ -26,9 +24,6 @@ var compaction = CompactionConfig{
 	ReserveTokens:    16_384,
 	KeepRecentTokens: 20_000,
 }
-
-// compactOut is where compaction progress is printed; tests swap it.
-var compactOut io.Writer = os.Stdout
 
 const (
 	summaryOpenTag  = "<summary>\n"
@@ -64,8 +59,9 @@ func (a *agent) shouldCompact() bool {
 	return a.lastUsage.InputTokens+a.lastUsage.OutputTokens > compaction.ContextWindow-compaction.ReserveTokens
 }
 
-// compact replaces the older part of a.messages with a summary. Failures are
-// logged and leave the messages untouched so the loop can carry on.
+// compact replaces the older part of a.messages with a summary. Failures,
+// including a Compact hook returning an error, are logged and leave the
+// messages untouched so the loop can carry on.
 func (a *agent) compact(ctx context.Context) {
 	start := 0
 	if a.summary != "" {
@@ -82,13 +78,15 @@ func (a *agent) compact(ctx context.Context) {
 		log4go.DefaultLogger().Error(ctx, "[%s] compaction failed, keeping %d messages: %v", a.name, len(a.messages), err)
 		return
 	}
+	summary, err = a.runCompactHooks(ctx, span, a.messages[cut:], summary)
+	if err != nil {
+		log4go.DefaultLogger().Error(ctx, "[%s] compaction cancelled by hook, keeping %d messages: %v", a.name, len(a.messages), err)
+		return
+	}
 	a.collectFiles(span)
 	a.summary = summary + a.renderFiles()
 
-	kept := append([]Message{summaryMessage(a.summary)}, a.messages[cut:]...)
-	fmt.Fprintf(compactOut, "\033[90m[COMPACT] %s: summarized %d messages (~%d tokens) into ~%d tokens, kept %d\033[0m\n",
-		a.name, len(span), estimateTokens(span...), estimateTokens(kept[0]), len(kept)-1)
-	a.messages = kept
+	a.messages = append([]Message{summaryMessage(a.summary)}, a.messages[cut:]...)
 }
 
 // findCutPoint returns cut such that messages[:cut] get summarized and

@@ -1,20 +1,18 @@
 package agentloop
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
 
-// useCompaction swaps in a config and silences compaction output for the test.
-func useCompaction(t *testing.T, cfg CompactionConfig) *bytes.Buffer {
+// useCompaction swaps in a config for the test.
+func useCompaction(t *testing.T, cfg CompactionConfig) {
 	t.Helper()
-	origCfg, origOut := compaction, compactOut
-	out := &bytes.Buffer{}
-	compaction, compactOut = cfg, out
-	t.Cleanup(func() { compaction, compactOut = origCfg, origOut })
-	return out
+	orig := compaction
+	compaction = cfg
+	t.Cleanup(func() { compaction = orig })
 }
 
 func userMsg(s string) Message { return Message{Role: MessageRoleUser, Content: s} }
@@ -223,7 +221,8 @@ func TestCollectFiles_AccumulateAcrossCompactions(t *testing.T) {
 
 func TestCompact_EndToEnd(t *testing.T) {
 	// 4 tool rounds of 100-token results; window line at 500, keep the newest ~250
-	out := useCompaction(t, CompactionConfig{ContextWindow: 600, ReserveTokens: 100, KeepRecentTokens: 250})
+	useCompaction(t, CompactionConfig{ContextWindow: 600, ReserveTokens: 100, KeepRecentTokens: 250})
+	out := captureHookOut(t)
 	autoAllow(t)
 	big := strings.Repeat("x", 400)
 	call := func(id string) SendMessagesResponse {
@@ -240,7 +239,8 @@ func TestCompact_EndToEnd(t *testing.T) {
 		text("done"),
 	}}
 
-	if err := NewAgent(llm, nil).RunLoop(context.Background(), []Message{userMsg("start")}); err != nil {
+	h := new(Hooks).OnCompact(CompactLogHook())
+	if err := NewAgent(llm, h).RunLoop(context.Background(), []Message{userMsg("start")}); err != nil {
 		t.Fatal(err)
 	}
 	if len(llm.calls) != 6 {
@@ -268,9 +268,42 @@ func TestCompact_EndToEnd(t *testing.T) {
 	if final[1].Role != MessageRoleAssistant {
 		t.Errorf("first kept message must be the assistant tool_use, got %+v", final[1])
 	}
-	if !strings.Contains(out.String(), "[COMPACT] main: summarized") {
+	if !strings.Contains(out.String(), "[HOOK] Compact: main summarized 5 messages") || !strings.Contains(out.String(), "kept 4") {
 		t.Errorf("no progress line: %q", out.String())
 	}
+}
+
+func TestHook_Compact_RewriteAndCancel(t *testing.T) {
+	useCompaction(t, CompactionConfig{ContextWindow: 100, ReserveTokens: 10, KeepRecentTokens: 1})
+	base := []Message{userMsg("start"), assistantMsg("mid"), assistantMsg("tail")}
+
+	t.Run("rewrite", func(t *testing.T) {
+		var gotCompacted, gotKept int
+		h := new(Hooks).OnCompact(func(_ context.Context, compacted, kept []Message, summary string) (string, error) {
+			gotCompacted, gotKept = len(compacted), len(kept)
+			return summary + " [checked]", nil
+		})
+		a := NewAgent(&scriptedLLM{responses: []SendMessagesResponse{text("S")}}, h).(*agent)
+		a.messages = append([]Message(nil), base...)
+
+		a.compact(context.Background())
+		if a.summary != "S [checked]" || gotCompacted != 2 || gotKept != 1 {
+			t.Errorf("summary=%q compacted=%d kept=%d", a.summary, gotCompacted, gotKept)
+		}
+	})
+
+	t.Run("cancel", func(t *testing.T) {
+		h := new(Hooks).OnCompact(func(context.Context, []Message, []Message, string) (string, error) {
+			return "", errors.New("summary lost the goal")
+		})
+		a := NewAgent(&scriptedLLM{responses: []SendMessagesResponse{text("S")}}, h).(*agent)
+		a.messages = append([]Message(nil), base...)
+
+		a.compact(context.Background())
+		if a.summary != "" || len(a.messages) != 3 || a.messages[0].Content != "start" {
+			t.Errorf("cancelled compaction must leave messages untouched: %+v", a.messages)
+		}
+	})
 }
 
 func TestCompact_SecondRoundReplacesSummary(t *testing.T) {

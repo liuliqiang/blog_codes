@@ -29,6 +29,12 @@ type PostToolUseHook func(ctx context.Context, toolUse MessagesBlock, output str
 // agent has a maxLoop.
 type StopHook func(ctx context.Context, messages []Message) (*Message, error)
 
+// CompactHook runs after the summarizer produced a summary and before it
+// replaces the compacted messages. compacted is the span being summarized,
+// kept the messages that stay verbatim, and the hook may rewrite the summary.
+// Returning an error cancels the compaction; the messages stay as they are.
+type CompactHook func(ctx context.Context, compacted, kept []Message, summary string) (string, error)
+
 // Hooks is an append-only registry. Fields are unexported so callers can add
 // hooks but never remove or replace ones registered by someone else; the
 // zero value is ready to use.
@@ -37,6 +43,7 @@ type Hooks struct {
 	preToolUse       []PreToolUseHook
 	postToolUse      []PostToolUseHook
 	stop             []StopHook
+	compact          []CompactHook
 }
 
 func (h *Hooks) OnUserPromptSubmit(fn UserPromptSubmitHook) *Hooks {
@@ -59,6 +66,11 @@ func (h *Hooks) OnStop(fn StopHook) *Hooks {
 	return h
 }
 
+func (h *Hooks) OnCompact(fn CompactHook) *Hooks {
+	h.compact = append(h.compact, fn)
+	return h
+}
+
 // snapshot returns an independent copy so the agent's hook set is frozen at
 // construction; later registrations on the caller's Hooks don't leak in.
 func (h *Hooks) snapshot() Hooks {
@@ -70,6 +82,7 @@ func (h *Hooks) snapshot() Hooks {
 		preToolUse:       append([]PreToolUseHook(nil), h.preToolUse...),
 		postToolUse:      append([]PostToolUseHook(nil), h.postToolUse...),
 		stop:             append([]StopHook(nil), h.stop...),
+		compact:          append([]CompactHook(nil), h.compact...),
 	}
 }
 
@@ -124,6 +137,17 @@ func (a *agent) runStopHooks(ctx context.Context, messages []Message) (*Message,
 		}
 	}
 	return nil, nil
+}
+
+func (a *agent) runCompactHooks(ctx context.Context, compacted, kept []Message, summary string) (string, error) {
+	for i, fn := range a.hooks.compact {
+		next, err := safeCall(ctx, "Compact", i, func() (string, error) { return fn(ctx, compacted, kept, summary) })
+		if err != nil {
+			return summary, err
+		}
+		summary = next
+	}
+	return summary, nil
 }
 
 func safeCall[T any](ctx context.Context, event string, index int, fn func() (T, error)) (result T, err error) {
