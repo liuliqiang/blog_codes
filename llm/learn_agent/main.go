@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	agentloop "github.com/liuliqiang/llmagent/07_skills"
-	"github.com/liuliqiang/llmagent/07_skills/llm/deepseek"
-	"github.com/liuliqiang/llmagent/07_skills/trace"
+	agentloop "github.com/liuliqiang/llmagent/08_context_compact"
+	"github.com/liuliqiang/llmagent/08_context_compact/llm/deepseek"
+	"github.com/liuliqiang/llmagent/08_context_compact/trace"
 )
 
 const traceHTMLPath = "trace.html"
@@ -22,7 +22,8 @@ func main() {
 		OnPreToolUse(agentloop.LogToolUseHook()).
 		OnPreToolUse(agentloop.PermissionHook()). // last, so it checks the final input
 		OnPostToolUse(agentloop.LargeOutputHook()).
-		OnStop(agentloop.SummaryHook())
+		OnStop(agentloop.SummaryHook()).
+		OnCompact(agentloop.CompactLogHook())
 	agent := agentloop.NewAgent(llmClient, hooks, rec)
 
 	err := agent.RunLoop(context.Background(), []agentloop.Message{
