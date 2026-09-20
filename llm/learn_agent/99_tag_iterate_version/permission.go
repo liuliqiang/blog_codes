@@ -51,6 +51,13 @@ var (
 		"todo_write": true,
 		"task":       true,
 		"load_skill": true,
+		// task tools only touch the .tasks/ store
+		"create_task":   true,
+		"update_task":   true,
+		"list_tasks":    true,
+		"get_task":      true,
+		"claim_task":    true,
+		"complete_task": true,
 	}
 
 	// denySubstrings rejects any command containing one of these fragments,

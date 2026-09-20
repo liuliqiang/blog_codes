@@ -181,6 +181,81 @@ func (a *agent) generateTools() []Tool {
 				"required": []string{"name"},
 			},
 		},
+		{
+			Name:        "create_task",
+			Handler:     a.runCreateTask,
+			Description: "Create a task and return its runtime-generated ID.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"subject":     map[string]interface{}{"type": "string"},
+					"description": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"subject"},
+			},
+		},
+		{
+			Name:        "update_task",
+			Handler:     a.runUpdateTask,
+			Description: "Add dependencies to a pending task using IDs returned by create_task.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string", "pattern": "^task_[0-9a-f]{8}$"},
+					"addBlockedBy": map[string]interface{}{
+						"type":     "array",
+						"items":    map[string]interface{}{"type": "string", "pattern": "^task_[0-9a-f]{8}$"},
+						"minItems": 1,
+					},
+				},
+				"required": []string{"task_id", "addBlockedBy"},
+			},
+		},
+		{
+			Name:        "list_tasks",
+			Handler:     a.runListTasks,
+			Description: "List tasks with status, owner, and dependencies.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "get_task",
+			Handler:     a.runGetTask,
+			Description: "Get the full record of a task by ID.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "claim_task",
+			Handler:     a.runClaimTask,
+			Description: "Claim a pending task whose dependencies are all completed; do this before working on it.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "complete_task",
+			Handler:     a.runCompleteTask,
+			Description: "Complete a task you claimed; reports which tasks became unblocked.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
 	}
 }
 
