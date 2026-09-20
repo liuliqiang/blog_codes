@@ -75,3 +75,18 @@ func CompactLogHook() CompactHook {
 		return summary, nil
 	}
 }
+
+// MemoryHook extracts durable knowledge from the finished conversation into
+// the memory store and consolidates the store once it grows large. Register
+// it last: an earlier Stop hook that keeps the loop going short-circuits the
+// chain, so extraction only runs when the session really ends.
+func MemoryHook(llm LLMClient) StopHook {
+	store := NewMemoryStore(memoryDir)
+	return func(ctx context.Context, messages []Message) (*Message, error) {
+		model := Memory.Model.orModel(llm.GetModel())
+		if extractMemories(ctx, llm, model, store, messages) > 0 {
+			consolidateMemories(ctx, llm, model, store)
+		}
+		return nil, nil
+	}
+}

@@ -17,12 +17,18 @@ func main() {
 	llmOpts.WithAPIKey(os.Getenv("DS_API_KEY"))
 	llmClient := deepseek.NewDeepseekClient(llmOpts)
 
+	// side tasks don't need the main model; leave any of these "" to fall back to it
+	agentloop.Compaction.Model = agentloop.ModelDeepseekFlash
+	agentloop.Memory.Model = agentloop.ModelDeepseekFlash
+	agentloop.Subagent.Model = agentloop.ModelDeepseekFlash
+
 	rec := trace.NewRecorder()
 	hooks := new(agentloop.Hooks).
 		OnPreToolUse(agentloop.LogToolUseHook()).
 		OnPreToolUse(agentloop.PermissionHook()). // last, so it checks the final input
 		OnPostToolUse(agentloop.LargeOutputHook()).
 		OnStop(agentloop.SummaryHook()).
+		OnStop(agentloop.MemoryHook(llmClient)). // last: only when the session really ends
 		OnCompact(agentloop.CompactLogHook())
 	agent := agentloop.NewAgent(llmClient, hooks, rec)
 

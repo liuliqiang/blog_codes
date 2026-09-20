@@ -18,11 +18,15 @@ func NewAgent(llmClient LLMClient, hooks *Hooks, recorders ...Recorder) Agent {
 		currLoop:      0,
 		maxLoop:       -1,
 		skills:        NewSkillLoader(skillsDir),
+		memory:        NewMemoryStore(memoryDir),
 		llmClient:     llmClient,
 		hooks:         hooks.snapshot(),
 		recorders:     recorders,
 		readFiles:     map[string]bool{},
 		modifiedFiles: map[string]bool{},
+	}
+	if llmClient != nil {
+		a.model = llmClient.GetModel()
 	}
 	a.systemPrompt = withSkillCatalog(defaultSystemPrompt, a.skills.Catalog())
 	a.tools = a.generateTools()
@@ -46,6 +50,7 @@ type agent struct {
 	systemPrompt string
 	messages     []Message
 	llmClient    LLMClient
+	model        Model // what the loop itself talks to; compaction and memory may use their own
 
 	tools     []Tool
 	toolIndex map[string]Tool
@@ -53,6 +58,7 @@ type agent struct {
 	hooks     Hooks
 	recorders []Recorder
 	skills    *SkillLoader
+	memory    *MemoryStore // nil on subagents: memory belongs to the main conversation
 
 	// roundsSinceTodo counts consecutive tool rounds without a todo_write call;
 	// runTools nags the model once it reaches todoReminderRounds.
@@ -67,8 +73,16 @@ type agent struct {
 
 func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
 	ctx = withAgentName(ctx, a.name)
+	systemPrompt := a.systemPrompt
+	if a.memory != nil {
+		systemPrompt = withMemory(
+			systemPrompt,     // base
+			a.memory.Index(), // index
+			recallMemories(ctx, a.llmClient, Memory.Model.orModel(a.model), a.memory, messages), // recalled
+		)
+	}
 	for _, r := range a.recorders {
-		r.OnStart(a.llmClient.GetModel(), a.systemPrompt, messages)
+		r.OnStart(a.model, systemPrompt, messages)
 	}
 	defer func() {
 		for _, r := range a.recorders {
@@ -90,10 +104,10 @@ func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
 
 		resp, err := a.llmClient.SendMessages(
 			ctx,
-			a.llmClient.GetModel(),
+			a.model,
 			Message{
 				Role:    MessageRoleSystem,
-				Content: a.systemPrompt,
+				Content: systemPrompt,
 			},
 			a.messages,
 			a.tools,

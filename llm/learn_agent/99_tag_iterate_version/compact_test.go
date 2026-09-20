@@ -10,9 +10,9 @@ import (
 // useCompaction swaps in a config for the test.
 func useCompaction(t *testing.T, cfg CompactionConfig) {
 	t.Helper()
-	orig := compaction
-	compaction = cfg
-	t.Cleanup(func() { compaction = orig })
+	orig := Compaction
+	Compaction = cfg
+	t.Cleanup(func() { Compaction = orig })
 }
 
 func userMsg(s string) Message { return Message{Role: MessageRoleUser, Content: s} }
@@ -234,7 +234,7 @@ func TestCompact_EndToEnd(t *testing.T) {
 		withUsage(call("c1"), 100, 10),
 		withUsage(call("c2"), 200, 10),
 		withUsage(call("c3"), 300, 10),
-		withUsage(call("c4"), 495, 10), // 505 > 500 → compaction before the next call
+		withUsage(call("c4"), 495, 10), // 505 > 500 → Compaction before the next call
 		text("## Goal\nsummary"),       // summarizer
 		text("done"),
 	}}
@@ -301,7 +301,7 @@ func TestHook_Compact_RewriteAndCancel(t *testing.T) {
 
 		a.compact(context.Background())
 		if a.summary != "" || len(a.messages) != 3 || a.messages[0].Content != "start" {
-			t.Errorf("cancelled compaction must leave messages untouched: %+v", a.messages)
+			t.Errorf("cancelled Compaction must leave messages untouched: %+v", a.messages)
 		}
 	})
 }
