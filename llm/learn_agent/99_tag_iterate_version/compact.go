@@ -10,16 +10,17 @@ import (
 	"github.com/liuliqiang/log4go"
 )
 
-// CompactionConfig decides when the conversation is compacted and how much
-// of it survives verbatim. ContextWindow <= 0 disables compaction.
+// CompactionConfig decides when the conversation is compacted, how much of it survives verbatim and which model
+// writes the summary. ContextWindow <= 0 disables Compaction.
 type CompactionConfig struct {
-	ContextWindow    int // model context window, in tokens
-	ReserveTokens    int // headroom kept free below the window
-	KeepRecentTokens int // newest messages that are never summarized
+	ContextWindow    int   // model context window, in tokens
+	ReserveTokens    int   // headroom kept free below the window
+	KeepRecentTokens int   // newest messages that are never summarized
+	Model            Model // summarizer model; "" uses the agent's own model
 }
 
-// compaction is the active config; tests swap it.
-var compaction = CompactionConfig{
+// Compaction is the active config; tests swap it.
+var Compaction = CompactionConfig{
 	ContextWindow:    128_000,
 	ReserveTokens:    16_384,
 	KeepRecentTokens: 20_000,
@@ -53,10 +54,10 @@ const summarizeUpdateInstruction = `A summary of the earlier part of the convers
 // shouldCompact reports whether the last response left the context above the
 // compaction line.
 func (a *agent) shouldCompact() bool {
-	if compaction.ContextWindow <= 0 || a.lastUsage == (Usage{}) {
+	if Compaction.ContextWindow <= 0 || a.lastUsage == (Usage{}) {
 		return false
 	}
-	return a.lastUsage.InputTokens+a.lastUsage.OutputTokens > compaction.ContextWindow-compaction.ReserveTokens
+	return a.lastUsage.InputTokens+a.lastUsage.OutputTokens > Compaction.ContextWindow-Compaction.ReserveTokens
 }
 
 // compact replaces the older part of a.messages with a summary. Failures,
@@ -67,7 +68,7 @@ func (a *agent) compact(ctx context.Context) {
 	if a.summary != "" {
 		start = 1 // messages[0] is the previous summary
 	}
-	cut := findCutPoint(a.messages[start:], compaction.KeepRecentTokens) + start
+	cut := findCutPoint(a.messages[start:], Compaction.KeepRecentTokens) + start
 	if cut <= start {
 		return
 	}
@@ -160,7 +161,7 @@ func (a *agent) summarize(ctx context.Context, span []Message) (string, error) {
 
 	resp, err := a.llmClient.SendMessages(
 		ctx,
-		a.llmClient.GetModel(),
+		Compaction.Model.orModel(a.model),
 		Message{Role: MessageRoleSystem, Content: summarizeSystemPrompt},
 		[]Message{{Role: MessageRoleUser, Content: b.String()}},
 		nil,

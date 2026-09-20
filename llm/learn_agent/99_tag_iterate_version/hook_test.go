@@ -16,12 +16,14 @@ type scriptedLLM struct {
 	calls     [][]Message
 	systems   []Message // system prompt of each call
 	tools     [][]Tool  // tool set of each call
+	models    []Model   // model of each call
 }
 
 func (s *scriptedLLM) GetModel() Model { return "fake" }
 
-func (s *scriptedLLM) SendMessages(_ context.Context, _ Model, system Message, messages []Message, tools []Tool, _ SendMessagesOpts) (SendMessagesResponse, error) {
+func (s *scriptedLLM) SendMessages(_ context.Context, model Model, system Message, messages []Message, tools []Tool, _ SendMessagesOpts) (SendMessagesResponse, error) {
 	s.calls = append(s.calls, append([]Message(nil), messages...))
+	s.models = append(s.models, model)
 	s.systems = append(s.systems, system)
 	s.tools = append(s.tools, tools)
 	if len(s.calls) > len(s.responses) {

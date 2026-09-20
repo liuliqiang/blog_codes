@@ -20,6 +20,14 @@ const (
 type SystemPrompt struct {
 }
 
+// orModel returns m, or fallback when no model was configured.
+func (m Model) orModel(fallback Model) Model {
+	if m == "" {
+		return fallback
+	}
+	return m
+}
+
 type MessageRole string
 
 const (

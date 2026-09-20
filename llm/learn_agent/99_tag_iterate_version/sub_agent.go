@@ -23,12 +23,20 @@ var subagentExcludedTools = map[string]bool{
 	"todo_write": true,
 }
 
-// newSubagent builds a child agent that shares the parent's LLM client and
-// hooks and skills but starts with fresh messages, no recorders and a reduced
-// tool set.
+// SubagentConfig sets what subagents run with.
+type SubagentConfig struct {
+	Model Model // "" inherits the parent agent's model
+}
+
+// Subagent is the active config.
+var Subagent SubagentConfig
+
+// newSubagent builds a child agent that shares the parent's LLM client, hooks and skills but starts with fresh messages,
+// no recorders and a reduced tool set. It runs on Subagent.Model when set, otherwise on the parent's model.
 func (a *agent) newSubagent() *agent {
 	sub := &agent{
 		name:          "subagent",
+		model:         Subagent.Model.orModel(a.model),
 		maxLoop:       subagentMaxLoop,
 		systemPrompt:  withSkillCatalog(subagentSystemPrompt, a.skills.Catalog()),
 		skills:        a.skills,
