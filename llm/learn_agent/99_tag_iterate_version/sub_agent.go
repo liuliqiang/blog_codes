@@ -41,6 +41,7 @@ func (a *agent) newSubagent() *agent {
 		systemPrompt:  withSkillCatalog(subagentSystemPrompt, a.skills.Catalog()),
 		skills:        a.skills,
 		tasks:         a.tasks,
+		background:    NewBackgroundManager(),
 		llmClient:     a.llmClient,
 		hooks:         a.hooks.snapshot(),
 		readFiles:     map[string]bool{},

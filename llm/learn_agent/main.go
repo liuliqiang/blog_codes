@@ -27,6 +27,7 @@ func main() {
 		OnPreToolUse(agentloop.LogToolUseHook()).
 		OnPreToolUse(agentloop.PermissionHook()). // last, so it checks the final input
 		OnPostToolUse(agentloop.LargeOutputHook()).
+		OnStop(agentloop.BackgroundTasksHook()). // before the rest: keeps the loop alive until background tasks report
 		OnStop(agentloop.SummaryHook()).
 		OnStop(agentloop.MemoryHook(llmClient)). // last: only when the session really ends
 		OnCompact(agentloop.CompactLogHook())

@@ -18,12 +18,16 @@ func (a *agent) generateTools() []Tool {
 		{
 			Name:        "run_bash",
 			Handler:     runBash,
-			Description: "Run a bash command and return the output.",
+			Description: "Run a bash command and return the output. Set run_in_background for slow commands (installs, full test suites, builds) whose result you do not need right away: the call returns a task id immediately and the result arrives in a later turn as a <task_notification>.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"command": map[string]interface{}{
 						"type": "string",
+					},
+					"run_in_background": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Run the command in the background and return immediately.",
 					},
 				},
 				"required": []string{"command"},
@@ -277,7 +281,12 @@ func (a *agent) runTools(ctx context.Context, toolUses []MessagesBlock) {
 		}
 
 		start := time.Now()
-		output := a.runTool(ctx, toolUse)
+		var output string
+		if shouldRunBackground(toolUse) {
+			output = a.startBackground(ctx, toolUse)
+		} else {
+			output = a.runTool(ctx, toolUse)
+		}
 		if toolUse.Name == "todo_write" {
 			usedTodo = true
 		}
