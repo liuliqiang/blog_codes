@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"syscall"
 
 	"github.com/liuliqiang/log4go"
 )
@@ -42,12 +44,40 @@ type Task struct {
 
 var taskIDRe = regexp.MustCompile(`^task_[0-9a-f]{8}$`)
 
-// TaskStore reads and writes the task files under one directory.
+// TaskStore reads and writes the task files under one directory. Mutations run under both an in-process mutex and an
+// advisory lock on <dir>/.lock, so several teammates — or another harness process sharing the directory — cannot
+// claim the same task.
 type TaskStore struct {
 	dir string
+	mu  sync.Mutex
 }
 
 func NewTaskStore(dir string) *TaskStore { return &TaskStore{dir: dir} }
+
+// withLock runs fn while holding the store lock. The file lock is advisory: it only keeps out processes that take it
+// too, which is every process using this package.
+func (s *TaskStore) withLock(fn func() error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ctx := context.Background()
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		log4go.DefaultLogger().Error(ctx, "create tasks dir failed: %v, dir: %s", err, s.dir)
+		return err
+	}
+	lockPath := filepath.Join(s.dir, ".lock")
+	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		log4go.DefaultLogger().Error(ctx, "open task lock failed: %v, path: %s", err, lockPath)
+		return err
+	}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		log4go.DefaultLogger().Error(ctx, "lock task store failed: %v, path: %s", err, lockPath)
+		return err
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	return fn()
+}
 
 func (s *TaskStore) path(id string) (string, error) {
 	if !taskIDRe.MatchString(id) {
@@ -132,13 +162,21 @@ func (s *TaskStore) Load(id string) (Task, error) {
 	return task, nil
 }
 
+// Save replaces the task's file atomically, so a reader in another process never sees a half-written record.
 func (s *TaskStore) Save(task Task) error {
+	ctx := context.Background()
 	path, err := s.path(task.ID)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, taskJSON(task), 0o644); err != nil {
-		log4go.DefaultLogger().Error(context.Background(), "write task file failed: %v, path: %s", err, path)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, taskJSON(task), 0o644); err != nil {
+		log4go.DefaultLogger().Error(ctx, "write task temp file failed: %v, path: %s", err, tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		log4go.DefaultLogger().Error(ctx, "rename task file failed: %v, from: %s, to: %s", err, tmp, path)
+		_ = os.Remove(tmp)
 		return err
 	}
 	return nil
@@ -166,7 +204,15 @@ func (s *TaskStore) List() ([]Task, error) {
 // AddDependencies appends deps to the task's blockedBy after checking the whole change: the task must still be
 // pending and unowned, every dependency must exist, and no edge may point at the task itself or close a cycle.
 // Repeating an existing edge is a no-op.
-func (s *TaskStore) AddDependencies(id string, deps []string) (Task, error) {
+func (s *TaskStore) AddDependencies(id string, deps []string) (out Task, err error) {
+	err = s.withLock(func() error {
+		out, err = s.addDependencies(id, deps)
+		return err
+	})
+	return out, err
+}
+
+func (s *TaskStore) addDependencies(id string, deps []string) (Task, error) {
 	task, err := s.Load(id)
 	if err != nil {
 		return Task{}, err
@@ -248,7 +294,15 @@ func (s *TaskStore) IncompleteDependencies(task Task) []string {
 func (s *TaskStore) CanStart(task Task) bool { return len(s.IncompleteDependencies(task)) == 0 }
 
 // Claim moves a pending, unblocked task to in_progress under owner.
-func (s *TaskStore) Claim(id, owner string) (Task, error) {
+func (s *TaskStore) Claim(id, owner string) (out Task, err error) {
+	err = s.withLock(func() error {
+		out, err = s.claim(id, owner)
+		return err
+	})
+	return out, err
+}
+
+func (s *TaskStore) claim(id, owner string) (Task, error) {
 	task, err := s.Load(id)
 	if err != nil {
 		return Task{}, err
@@ -259,6 +313,11 @@ func (s *TaskStore) Claim(id, owner string) (Task, error) {
 	if blocked := s.IncompleteDependencies(task); len(blocked) > 0 {
 		return Task{}, fmt.Errorf("task %s is blocked by: %s", id, strings.Join(blocked, ", "))
 	}
+	if busy, err := s.inProgressFor(owner); err != nil {
+		return Task{}, err
+	} else if busy != "" {
+		return Task{}, fmt.Errorf("%s must complete %s before claiming another task", owner, busy)
+	}
 	task.Owner = owner
 	task.Status = TaskInProgress
 	if err := s.Save(task); err != nil {
@@ -268,7 +327,15 @@ func (s *TaskStore) Claim(id, owner string) (Task, error) {
 }
 
 // Complete marks an in_progress task owned by owner as completed and returns the tasks that just became startable.
-func (s *TaskStore) Complete(id, owner string) (Task, []Task, error) {
+func (s *TaskStore) Complete(id, owner string) (task Task, unblocked []Task, err error) {
+	err = s.withLock(func() error {
+		task, unblocked, err = s.complete(id, owner)
+		return err
+	})
+	return task, unblocked, err
+}
+
+func (s *TaskStore) complete(id, owner string) (Task, []Task, error) {
 	task, err := s.Load(id)
 	if err != nil {
 		return Task{}, nil, err
@@ -446,4 +513,61 @@ func stringSliceArg(input map[string]interface{}, key string) ([]string, error) 
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+// inProgressFor returns the ID of the task owner is already working on, "" when it is free.
+func (s *TaskStore) inProgressFor(owner string) (string, error) {
+	tasks, err := s.List()
+	if err != nil {
+		return "", err
+	}
+	for _, t := range tasks {
+		if t.Status == TaskInProgress && t.Owner == owner {
+			return t.ID, nil
+		}
+	}
+	return "", nil
+}
+
+// ClaimNext claims the first task that is pending, unowned and unblocked, and reports whether it found one. Scanning
+// only produces candidates: the claim itself happens under the store lock, so when several teammates see the same
+// task exactly one of them gets it.
+func (s *TaskStore) ClaimNext(owner string) (claimed Task, ok bool, err error) {
+	err = s.withLock(func() error {
+		if busy, err := s.inProgressFor(owner); err != nil || busy != "" {
+			return err
+		}
+		tasks, err := s.List()
+		if err != nil {
+			return err
+		}
+		for _, t := range tasks {
+			if t.Status != TaskPending || t.Owner != "" || !s.CanStart(t) {
+				continue
+			}
+			claimed, err = s.claim(t.ID, owner)
+			if err != nil {
+				return err
+			}
+			ok = true
+			return nil
+		}
+		return nil
+	})
+	return claimed, ok, err
+}
+
+// Release hands a claimed task back to the board, used when a teammate could not finish it.
+func (s *TaskStore) Release(id, owner string) error {
+	return s.withLock(func() error {
+		task, err := s.Load(id)
+		if err != nil {
+			return err
+		}
+		if task.Status != TaskInProgress || task.Owner != owner {
+			return fmt.Errorf("task %s is not in progress for %s", id, owner)
+		}
+		task.Status, task.Owner = TaskPending, ""
+		return s.Save(task)
+	})
 }

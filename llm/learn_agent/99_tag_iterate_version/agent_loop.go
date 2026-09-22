@@ -12,7 +12,9 @@ When a task needs more than a couple of steps, start by calling todo_write to br
 
 ` + taskSystemPromptGuidance + `
 
-` + cronSystemPromptGuidance
+` + cronSystemPromptGuidance + `
+
+` + teamSystemPromptGuidance
 
 type Agent interface {
 	RunLoop(ctx context.Context, messages []Message) error
@@ -39,6 +41,7 @@ func NewAgent(llmClient LLMClient, hooks *Hooks, recorders ...Recorder) Agent {
 	if llmClient != nil {
 		a.model = llmClient.GetModel()
 	}
+	a.team = newTeamRuntime(a)
 	a.systemPrompt = withSkillCatalog(defaultSystemPrompt, a.skills.Catalog())
 	a.tools = a.generateTools()
 	a.toolIndex = indexTools(a.tools)
@@ -72,7 +75,11 @@ type agent struct {
 	memory     *MemoryStore // nil on subagents: memory belongs to the main conversation
 	tasks      *TaskStore   // shared with subagents so they can claim work from the same graph
 	background *BackgroundManager
-	cron       *CronStore // nil on subagents: scheduling belongs to the main conversation
+	cron       *CronStore   // nil on subagents: scheduling belongs to the main conversation
+	team       *TeamRuntime // the lead's teammates; teammates share their lead's runtime
+
+	// persistHistory keeps a teammate's conversation across assignments instead of starting each turn fresh.
+	persistHistory bool
 
 	// roundsSinceTodo counts consecutive tool rounds without a todo_write call;
 	// runTools nags the model once it reaches todoReminderRounds.
@@ -121,10 +128,15 @@ func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
 	if err != nil {
 		return err
 	}
-	a.messages = messages
+	if a.persistHistory {
+		a.messages = append(a.messages, messages...)
+	} else {
+		a.messages = messages
+	}
 
 	for a.shouldContinue() {
 		a.injectBackgroundResults()
+		a.injectTeamEvents()
 		if a.shouldCompact() {
 			a.compact(ctx)
 		}
@@ -185,6 +197,10 @@ func (a *agent) resetLoop() bool {
 	a.background.Shutdown()
 	a.currLoop = 0
 	a.roundsSinceTodo = 0
+	if a.persistHistory {
+		// a teammate keeps working in the same conversation, so its compaction state has to survive the turn
+		return true
+	}
 	a.lastUsage = Usage{}
 	a.summary = ""
 	a.readFiles = map[string]bool{}

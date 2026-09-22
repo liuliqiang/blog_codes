@@ -62,6 +62,11 @@ var (
 		"schedule_cron": true,
 		"list_crons":    true,
 		"cancel_cron":   true,
+		// team tools only touch the mailboxes and the teammate registry
+		"spawn_teammate":    true,
+		"list_teammates":    true,
+		"send_message":      true,
+		"shutdown_teammate": true,
 	}
 
 	// denySubstrings rejects any command containing one of these fragments,

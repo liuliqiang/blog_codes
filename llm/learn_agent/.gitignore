@@ -1,4 +1,5 @@
 trace.html
 .memory/
 .tasks/
+.mailboxes/
 .scheduled_tasks.json
