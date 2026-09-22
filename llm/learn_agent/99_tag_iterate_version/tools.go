@@ -260,6 +260,42 @@ func (a *agent) generateTools() []Tool {
 				"required": []string{"task_id"},
 			},
 		},
+		{
+			Name:        "schedule_cron",
+			Handler:     a.runScheduleCron,
+			Description: "Schedule a prompt to be run on a cron schedule (5 fields: minute hour day month weekday; supports * */N N N-M N,M). recurring defaults to true, durable (survives restart) to true.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"cron":      map[string]interface{}{"type": "string"},
+					"prompt":    map[string]interface{}{"type": "string"},
+					"recurring": map[string]interface{}{"type": "boolean"},
+					"durable":   map[string]interface{}{"type": "boolean"},
+				},
+				"required": []string{"cron", "prompt"},
+			},
+		},
+		{
+			Name:        "list_crons",
+			Handler:     a.runListCrons,
+			Description: "List scheduled cron jobs.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "cancel_cron",
+			Handler:     a.runCancelCron,
+			Description: "Cancel a scheduled cron job by ID.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"job_id": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"job_id"},
+			},
+		},
 	}
 }
 

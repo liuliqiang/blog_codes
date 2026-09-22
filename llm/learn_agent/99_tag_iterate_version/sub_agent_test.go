@@ -57,13 +57,13 @@ func TestNewSubagent(t *testing.T) {
 		t.Errorf("maxLoop=%d systemPrompt=%q", sub.maxLoop, sub.systemPrompt)
 	}
 	names := toolNames(sub.tools)
-	for _, excluded := range []string{"task", "todo_write"} {
+	for excluded := range subagentExcludedTools {
 		if _, ok := sub.toolIndex[excluded]; ok {
 			t.Errorf("subagent must not get %s, have %v", excluded, names)
 		}
 	}
-	if len(sub.tools) != len(parent.tools)-2 {
-		t.Errorf("subagent tools = %v, want parent's minus task/todo_write", names)
+	if len(sub.tools) != len(parent.tools)-len(subagentExcludedTools) {
+		t.Errorf("subagent tools = %v, want parent's minus %v", names, subagentExcludedTools)
 	}
 }
 

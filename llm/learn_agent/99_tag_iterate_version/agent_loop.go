@@ -1,12 +1,18 @@
 package agentloop
 
-import "context"
+import (
+	"context"
+
+	"github.com/liuliqiang/log4go"
+)
 
 const defaultSystemPrompt = `You are a senior software engineer.
 
 When a task needs more than a couple of steps, start by calling todo_write to break it down. Mark the step you are working on in_progress, mark steps completed as soon as they are done, and keep the list current as the plan changes.
 
-` + taskSystemPromptGuidance
+` + taskSystemPromptGuidance + `
+
+` + cronSystemPromptGuidance
 
 type Agent interface {
 	RunLoop(ctx context.Context, messages []Message) error
@@ -23,6 +29,7 @@ func NewAgent(llmClient LLMClient, hooks *Hooks, recorders ...Recorder) Agent {
 		memory:        NewMemoryStore(memoryDir),
 		tasks:         NewTaskStore(tasksDir),
 		background:    NewBackgroundManager(),
+		cron:          NewCronStore(cronPath),
 		llmClient:     llmClient,
 		hooks:         hooks.snapshot(),
 		recorders:     recorders,
@@ -65,6 +72,7 @@ type agent struct {
 	memory     *MemoryStore // nil on subagents: memory belongs to the main conversation
 	tasks      *TaskStore   // shared with subagents so they can claim work from the same graph
 	background *BackgroundManager
+	cron       *CronStore // nil on subagents: scheduling belongs to the main conversation
 
 	// roundsSinceTodo counts consecutive tool rounds without a todo_write call;
 	// runTools nags the model once it reaches todoReminderRounds.
@@ -100,6 +108,15 @@ func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
 		a.resetLoop()
 	}()
 
+	// jobs a scheduled turn was started for: acknowledged once the model accepts the prompt, restored if it never does
+	delivery := cronDeliveryFrom(ctx)
+	acknowledged := len(delivery) == 0
+	defer func() {
+		if !acknowledged && a.cron != nil {
+			a.cron.Restore(delivery)
+		}
+	}()
+
 	messages, err = a.runUserPromptSubmitHooks(ctx, messages)
 	if err != nil {
 		return err
@@ -126,6 +143,12 @@ func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
 			return err
 		}
 		a.lastUsage = resp.Usage
+		if !acknowledged && a.cron != nil {
+			if err := a.cron.Acknowledge(delivery); err != nil {
+				log4go.DefaultLogger().Error(ctx, "[%s] cron acknowledgement failed: %v", a.name, err)
+			}
+			acknowledged = true
+		}
 
 		for _, r := range a.recorders {
 			r.OnResponse(a.turn(), resp)

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 
 	agentloop "github.com/liuliqiang/llmagent/99_tag_iterate_version"
 	"github.com/liuliqiang/llmagent/99_tag_iterate_version/llm/deepseek"
@@ -13,11 +15,13 @@ import (
 const traceHTMLPath = "trace.html"
 
 func main() {
+	prompt := flag.String("p", "", "prompt for an initial agent turn; without it only the cron scheduler runs")
+	flag.Parse()
+
 	llmOpts := deepseek.NewDeepseekClientOptions(agentloop.ModelDeepseekFlash)
 	llmOpts.WithAPIKey(os.Getenv("DS_API_KEY"))
 	llmClient := deepseek.NewDeepseekClient(llmOpts)
 
-	// side tasks don't need the main model; leave any of these "" to fall back to it
 	agentloop.Compaction.Model = agentloop.ModelDeepseekFlash
 	agentloop.Memory.Model = agentloop.ModelDeepseekFlash
 	agentloop.Subagent.Model = agentloop.ModelDeepseekFlash
@@ -33,14 +37,34 @@ func main() {
 		OnCompact(agentloop.CompactLogHook())
 	agent := agentloop.NewAgent(llmClient, hooks, rec)
 
-	err := agent.RunLoop(context.Background(), []agentloop.Message{
-		{
-			Role:    agentloop.MessageRoleUser,
-			Content: "/code-review https://github.com/liuliqiang/blog_codes/pull/6.",
-		},
-	})
+	sched, err := agentloop.NewScheduler(agent)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "agent failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "scheduler: %v\n", err)
+		os.Exit(1)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	// the scheduler starts first so jobs that come due during the user's turn queue up and run right after it
+	schedDone := make(chan error, 1)
+	go func() { schedDone <- sched.Run(ctx) }()
+
+	if *prompt != "" {
+		err := sched.RunTurn(ctx, []agentloop.Message{{Role: agentloop.MessageRoleUser, Content: *prompt}})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "agent failed: %v\n", err)
+		}
+		if sched.HasJobs() {
+			fmt.Println("cron jobs scheduled, scheduler keeps running (Ctrl-C to stop)")
+		} else {
+			stop() // nothing scheduled: no reason to linger
+		}
+	} else {
+		fmt.Println("no -p prompt given, running the cron scheduler only (Ctrl-C to stop)")
+	}
+
+	if err := <-schedDone; err != nil {
+		fmt.Fprintf(os.Stderr, "scheduler: %v\n", err)
 	}
 
 	if err := rec.WriteHTML(traceHTMLPath); err != nil {

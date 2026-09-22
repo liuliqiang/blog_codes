@@ -1,3 +1,4 @@
 trace.html
 .memory/
 .tasks/
+.scheduled_tasks.json
