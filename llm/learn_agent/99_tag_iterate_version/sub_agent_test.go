@@ -88,7 +88,7 @@ func TestTaskTool_ReturnsSubagentFinalText(t *testing.T) {
 	if !strings.HasPrefix(llm.systems[1].Content.(string), subagentSystemPrompt) || !strings.HasPrefix(llm.systems[0].Content.(string), defaultSystemPrompt) {
 		t.Errorf("system prompts = %v / %v", llm.systems[0].Content, llm.systems[1].Content)
 	}
-	if names := toolNames(llm.tools[1]); strings.Contains(strings.Join(names, ","), "task") {
+	if names := toolNames(llm.tools[1]); strings.Contains(","+strings.Join(names, ",")+",", ",task,") {
 		t.Errorf("subagent was offered task: %v", names)
 	}
 	// the parent gets the subagent's answer as the tool result

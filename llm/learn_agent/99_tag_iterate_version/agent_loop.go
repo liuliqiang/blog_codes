@@ -4,7 +4,9 @@ import "context"
 
 const defaultSystemPrompt = `You are a senior software engineer.
 
-When a task needs more than a couple of steps, start by calling todo_write to break it down. Mark the step you are working on in_progress, mark steps completed as soon as they are done, and keep the list current as the plan changes.`
+When a task needs more than a couple of steps, start by calling todo_write to break it down. Mark the step you are working on in_progress, mark steps completed as soon as they are done, and keep the list current as the plan changes.
+
+` + taskSystemPromptGuidance
 
 type Agent interface {
 	RunLoop(ctx context.Context, messages []Message) error
@@ -19,6 +21,7 @@ func NewAgent(llmClient LLMClient, hooks *Hooks, recorders ...Recorder) Agent {
 		maxLoop:       -1,
 		skills:        NewSkillLoader(skillsDir),
 		memory:        NewMemoryStore(memoryDir),
+		tasks:         NewTaskStore(tasksDir),
 		llmClient:     llmClient,
 		hooks:         hooks.snapshot(),
 		recorders:     recorders,
@@ -59,6 +62,7 @@ type agent struct {
 	recorders []Recorder
 	skills    *SkillLoader
 	memory    *MemoryStore // nil on subagents: memory belongs to the main conversation
+	tasks     *TaskStore   // shared with subagents so they can claim work from the same graph
 
 	// roundsSinceTodo counts consecutive tool rounds without a todo_write call;
 	// runTools nags the model once it reaches todoReminderRounds.
