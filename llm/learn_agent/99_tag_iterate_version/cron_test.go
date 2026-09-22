@@ -475,3 +475,73 @@ func TestScheduler_RunRefusesCorruptStore(t *testing.T) {
 type fakeAgent struct{}
 
 func (fakeAgent) RunLoop(context.Context, []Message) error { return nil }
+
+// gateLLM answers like scriptedLLM but blocks inside SendMessages until released, so a test can hold a turn open.
+type gateLLM struct {
+	scriptedLLM
+	started chan struct{}
+	release chan struct{}
+}
+
+func (g *gateLLM) SendMessages(ctx context.Context, model Model, system Message, messages []Message, tools []Tool, opts SendMessagesOpts) (SendMessagesResponse, error) {
+	select {
+	case g.started <- struct{}{}:
+	default:
+	}
+	<-g.release
+	return g.scriptedLLM.SendMessages(ctx, model, system, messages, tools, opts)
+}
+
+func TestScheduler_UserTurnAndScheduledTurnDoNotOverlap(t *testing.T) {
+	useCronPath(t)
+	llm := &gateLLM{
+		scriptedLLM: scriptedLLM{responses: []SendMessagesResponse{text("user turn done"), text("scheduled turn done")}},
+		started:     make(chan struct{}, 1),
+		release:     make(chan struct{}),
+	}
+	ag := NewAgent(llm, nil)
+	sched, err := NewScheduler(ag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ag.(*agent).cron.Schedule("* * * * *", "tick", false, false); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	schedDone := make(chan error, 1)
+	go func() { schedDone <- sched.Run(ctx) }()
+
+	// the user's turn starts and blocks inside the model call while the scheduler keeps polling
+	turnDone := make(chan error, 1)
+	go func() { turnDone <- sched.RunTurn(ctx, userHi) }()
+	<-llm.started
+	time.Sleep(5 * schedulerPollInterval) // long enough for the job to come due and be queued
+	if q := sched.store.List(); len(q) != 1 || !q[0].PendingDelivery {
+		t.Fatalf("job should be due and pending while the user turn runs: %+v", q)
+	}
+	if n := len(llm.calls); n != 0 {
+		t.Fatalf("scheduled turn must not reach the model while the user turn holds the lock, calls=%d", n)
+	}
+
+	// release the user turn: it finishes, then the scheduled turn runs
+	close(llm.release)
+	if err := <-turnDone; err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(3 * time.Second)
+	for len(llm.calls) < 2 {
+		select {
+		case <-deadline:
+			t.Fatalf("scheduled turn never ran after the user turn, calls=%d", len(llm.calls))
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	cancel()
+	<-schedDone
+
+	if llm.calls[0][0].Content != "hi" || llm.calls[1][0].Content != "[Scheduled] tick" || len(llm.calls[1]) != 1 {
+		t.Errorf("turn order / isolation wrong: %+v", llm.calls)
+	}
+}

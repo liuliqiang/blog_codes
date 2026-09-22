@@ -495,10 +495,12 @@ func cronDeliveryFrom(ctx context.Context) []CronJob {
 var schedulerPollInterval = time.Second
 
 // Scheduler fires due cron jobs into the agent. It polls the clock in one goroutine and delivers queued prompts from
-// Run's goroutine, one scheduled turn at a time, so a scheduled turn never overlaps another turn on the same agent.
+// Run's goroutine. Every turn on the agent — scheduled or the user's via RunTurn — takes the same lock, so turns never
+// overlap while jobs that come due during one keep queuing and are delivered as soon as it ends.
 type Scheduler struct {
 	agent Agent
 	store *CronStore
+	turn  sync.Mutex
 }
 
 // NewScheduler binds a scheduler to the agent's cron store. Only agents built by NewAgent have one.
@@ -515,6 +517,13 @@ func (s *Scheduler) HasJobs() bool {
 	s.store.mu.Lock()
 	defer s.store.mu.Unlock()
 	return len(s.store.jobs) > 0 || len(s.store.queue) > 0
+}
+
+// RunTurn runs the user's own turn on the agent, waiting for any scheduled turn in progress to finish first.
+func (s *Scheduler) RunTurn(ctx context.Context, messages []Message) error {
+	s.turn.Lock()
+	defer s.turn.Unlock()
+	return s.agent.RunLoop(ctx, messages)
 }
 
 // Run blocks until ctx is done, delivering every due job as a fresh `[Scheduled] <prompt>` turn. Scheduled turns run
@@ -564,6 +573,13 @@ func (s *Scheduler) deliver(ctx context.Context, jobs []CronJob) {
 		withNonInteractive(ctx), // ctx
 		jobs,                    // jobs
 	)
+	s.turn.Lock()
+	defer s.turn.Unlock()
+	if ctx.Err() != nil {
+		// the scheduler was stopped while we waited for the lock; leave the jobs queued for the next start
+		s.store.Restore(jobs)
+		return
+	}
 	if err := s.agent.RunLoop(runCtx, messages); err != nil {
 		log4go.DefaultLogger().Error(ctx, "scheduled turn failed: %v, jobs: %d", err, len(jobs))
 		fmt.Fprintf(cronOut, "\033[35m[cron] scheduled turn failed: %v\033[0m\n", err)
