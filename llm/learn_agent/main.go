@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 
 	agentloop "github.com/liuliqiang/llmagent/99_tag_iterate_version"
 	"github.com/liuliqiang/llmagent/99_tag_iterate_version/llm/deepseek"
@@ -41,6 +42,16 @@ func main() {
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agent failed: %v\n", err)
+	}
+
+	// keep running while there are cron jobs; Ctrl-C stops the scheduler
+	if sched, err := agentloop.NewScheduler(agent); err == nil && sched.HasJobs() {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		fmt.Println("cron jobs scheduled, scheduler running (Ctrl-C to stop)")
+		if err := sched.Run(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "scheduler: %v\n", err)
+		}
+		stop()
 	}
 
 	if err := rec.WriteHTML(traceHTMLPath); err != nil {

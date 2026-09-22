@@ -17,10 +17,14 @@ Complete the task with the tools available, then reply with a concise summary of
 const subagentMaxLoop = 30
 
 // subagentExcludedTools are not handed to a subagent: task would allow
-// unbounded recursion, and todo_write would clobber the parent's shared list.
+// unbounded recursion, todo_write would clobber the parent's shared list, and the schedule belongs to the main
+// conversation.
 var subagentExcludedTools = map[string]bool{
-	"task":       true,
-	"todo_write": true,
+	"task":          true,
+	"todo_write":    true,
+	"schedule_cron": true,
+	"list_crons":    true,
+	"cancel_cron":   true,
 }
 
 // SubagentConfig sets what subagents run with.

@@ -58,6 +58,10 @@ var (
 		"get_task":      true,
 		"claim_task":    true,
 		"complete_task": true,
+		// cron tools only touch the schedule
+		"schedule_cron": true,
+		"list_crons":    true,
+		"cancel_cron":   true,
 	}
 
 	// denySubstrings rejects any command containing one of these fragments,
@@ -112,6 +116,11 @@ var (
 // checkUserAllow asks the user on the terminal whether the tool call may run.
 // Only an explicit "y" / "yes" allows it; anything else, including EOF, denies.
 func checkUserAllow(ctx context.Context, tool MessagesBlock) bool {
+	if isNonInteractive(ctx) {
+		log4go.DefaultLogger().Error(ctx, "[%s] tool %q needs approval but the turn is non-interactive, denied", agentNameFrom(ctx), tool.Name)
+		fmt.Fprintf(promptOut, "\n[%s] tool %q needs approval but this is a scheduled turn: denied\n", agentNameFrom(ctx), tool.Name)
+		return false
+	}
 	input, err := json.MarshalIndent(tool.Input, "  ", "  ")
 	if err != nil {
 		log4go.DefaultLogger().Error(ctx, "marshal tool input failed: %v, input: %+v", err, tool.Input)
