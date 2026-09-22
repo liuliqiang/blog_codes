@@ -22,6 +22,7 @@ func NewAgent(llmClient LLMClient, hooks *Hooks, recorders ...Recorder) Agent {
 		skills:        NewSkillLoader(skillsDir),
 		memory:        NewMemoryStore(memoryDir),
 		tasks:         NewTaskStore(tasksDir),
+		background:    NewBackgroundManager(),
 		llmClient:     llmClient,
 		hooks:         hooks.snapshot(),
 		recorders:     recorders,
@@ -58,11 +59,12 @@ type agent struct {
 	tools     []Tool
 	toolIndex map[string]Tool
 
-	hooks     Hooks
-	recorders []Recorder
-	skills    *SkillLoader
-	memory    *MemoryStore // nil on subagents: memory belongs to the main conversation
-	tasks     *TaskStore   // shared with subagents so they can claim work from the same graph
+	hooks      Hooks
+	recorders  []Recorder
+	skills     *SkillLoader
+	memory     *MemoryStore // nil on subagents: memory belongs to the main conversation
+	tasks      *TaskStore   // shared with subagents so they can claim work from the same graph
+	background *BackgroundManager
 
 	// roundsSinceTodo counts consecutive tool rounds without a todo_write call;
 	// runTools nags the model once it reaches todoReminderRounds.
@@ -76,7 +78,10 @@ type agent struct {
 }
 
 func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
-	ctx = withAgentName(ctx, a.name)
+	ctx = withAgent(
+		withAgentName(ctx, a.name), // ctx
+		a,                          // a
+	)
 	systemPrompt := a.systemPrompt
 	if a.memory != nil {
 		systemPrompt = withMemory(
@@ -102,6 +107,7 @@ func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
 	a.messages = messages
 
 	for a.shouldContinue() {
+		a.injectBackgroundResults()
 		if a.shouldCompact() {
 			a.compact(ctx)
 		}
@@ -153,6 +159,7 @@ func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
 }
 
 func (a *agent) resetLoop() bool {
+	a.background.Shutdown()
 	a.currLoop = 0
 	a.roundsSinceTodo = 0
 	a.lastUsage = Usage{}
@@ -179,6 +186,19 @@ func (a *agent) shouldContinue() bool {
 // agentNameKey carries the running agent's name through ctx so hooks and
 // tool handlers can tell the main agent and subagents apart.
 type agentNameKey struct{}
+
+// agentKey carries the running agent itself for built-in hooks that need its state.
+type agentKey struct{}
+
+func withAgent(ctx context.Context, a *agent) context.Context {
+	return context.WithValue(ctx, agentKey{}, a)
+}
+
+// agentFrom returns the agent stored in ctx, nil when there is none.
+func agentFrom(ctx context.Context) *agent {
+	a, _ := ctx.Value(agentKey{}).(*agent)
+	return a
+}
 
 func withAgentName(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, agentNameKey{}, name)
