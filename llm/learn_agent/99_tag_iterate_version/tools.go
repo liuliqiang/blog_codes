@@ -296,6 +296,54 @@ func (a *agent) generateTools() []Tool {
 				"required": []string{"job_id"},
 			},
 		},
+		{
+			Name:        "spawn_teammate",
+			Handler:     a.runSpawnTeammate,
+			Description: "Start a persistent teammate that works on its own. Propose the split and get the user's confirmation first. Give it the task_id it should start on; it then picks up further unblocked tasks from the board itself.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name":    map[string]interface{}{"type": "string"},
+					"role":    map[string]interface{}{"type": "string"},
+					"task_id": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"name"},
+			},
+		},
+		{
+			Name:        "list_teammates",
+			Handler:     a.runListTeammates,
+			Description: "List the teammates with their state and current task.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "send_message",
+			Handler:     a.runSendMessage,
+			Description: "Send a message to a teammate; it is delivered as its next assignment.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"to":      map[string]interface{}{"type": "string"},
+					"content": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"to", "content"},
+			},
+		},
+		{
+			Name:        "shutdown_teammate",
+			Handler:     a.runShutdownTeammate,
+			Description: "Ask a teammate to finish its current step and stop.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"name"},
+			},
+		},
 	}
 }
 
