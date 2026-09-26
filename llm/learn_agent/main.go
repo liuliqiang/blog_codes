@@ -26,6 +26,17 @@ func main() {
 	agentloop.Memory.Model = agentloop.ModelDeepseekFlash
 	agentloop.Subagent.Model = agentloop.ModelDeepseekFlash
 
+	// MCP servers the model may connect to, and what the host lets their tools do. A tool with no policy entry needs
+	// the user's confirmation; a server's own "readOnly" hint never grants access.
+	agentloop.MCP.Servers = []agentloop.MCPServerConfig{
+		{Name: "filesystem", Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", "."}},
+	}
+	agentloop.MCP.Policy = map[string]string{
+		"mcp__filesystem__read_file":      "allow",
+		"mcp__filesystem__list_directory": "allow",
+		"mcp__filesystem__write_file":     "confirm",
+	}
+
 	rec := trace.NewRecorder()
 	hooks := new(agentloop.Hooks).
 		OnPreToolUse(agentloop.LogToolUseHook()).

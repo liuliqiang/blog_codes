@@ -70,6 +70,7 @@ var (
 		"request_plan":      true,
 		"review_plan":       true,
 		"submit_plan":       true,
+		"list_mcp":          true,
 	}
 
 	// denySubstrings rejects any command containing one of these fragments,
@@ -236,6 +237,21 @@ func isCommandAllowed(command string) bool {
 }
 
 func checkToolPermission(ctx context.Context, tool MessagesBlock) (bool, string) {
+	// an external tool is governed only by the host policy: what the server says about its own tool is a claim, not
+	// authorization, and the allow list below is for built-in tools
+	if isMCPTool(tool.Name) {
+		switch mcpPolicyFor(tool.Name) {
+		case mcpPolicyAllow:
+			return true, ""
+		case mcpPolicyDeny:
+			return false, "The host policy does not allow this external tool."
+		default:
+			if !checkUserAllow(ctx, tool) {
+				return false, "User denied permission to run the tool."
+			}
+			return true, ""
+		}
+	}
 	if isAllowListed(tool) {
 		return true, ""
 	}

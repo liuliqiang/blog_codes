@@ -437,6 +437,7 @@ func (t *TeamRuntime) newTeammateAgent(name, role string) *agent {
 		systemPrompt:   withSkillCatalog(prompt, lead.skills.Catalog()),
 		skills:         lead.skills,
 		tasks:          lead.tasks,
+		mcp:            lead.mcp,
 		team:           t,
 		background:     NewBackgroundManager(),
 		llmClient:      lead.llmClient,

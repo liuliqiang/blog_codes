@@ -14,7 +14,9 @@ When a task needs more than a couple of steps, start by calling todo_write to br
 
 ` + cronSystemPromptGuidance + `
 
-` + teamSystemPromptGuidance
+` + teamSystemPromptGuidance + `
+
+` + mcpSystemPromptGuidance
 
 type Agent interface {
 	RunLoop(ctx context.Context, messages []Message) error
@@ -31,6 +33,7 @@ func NewAgent(llmClient LLMClient, hooks *Hooks, recorders ...Recorder) Agent {
 		memory:        NewMemoryStore(memoryDir),
 		tasks:         NewTaskStore(tasksDir),
 		background:    NewBackgroundManager(),
+		mcp:           NewMCPRegistry(),
 		cron:          NewCronStore(cronPath),
 		llmClient:     llmClient,
 		hooks:         hooks.snapshot(),
@@ -46,6 +49,20 @@ func NewAgent(llmClient LLMClient, hooks *Hooks, recorders ...Recorder) Agent {
 	a.tools = a.generateTools()
 	a.toolIndex = indexTools(a.tools)
 	return a
+}
+
+// assembleTools is the tool pool for one model call: the built-in tools plus the tools of every MCP server connected
+// so far. It is rebuilt every turn, so a server the model connects to shows up in its next call. The dispatch index is
+// refreshed with it.
+func (a *agent) assembleTools() []Tool {
+	tools := a.tools
+	if a.mcp != nil {
+		if external := a.mcp.Tools(); len(external) > 0 {
+			tools = append(append([]Tool(nil), tools...), external...)
+		}
+	}
+	a.toolIndex = indexTools(tools)
+	return tools
 }
 
 func indexTools(tools []Tool) map[string]Tool {
@@ -77,6 +94,8 @@ type agent struct {
 	background *BackgroundManager
 	cron       *CronStore   // nil on subagents: scheduling belongs to the main conversation
 	team       *TeamRuntime // the lead's teammates; teammates share their lead's runtime
+
+	mcp *MCPRegistry // connected MCP servers; shared with subagents and teammates
 
 	// persistHistory keeps a teammate's conversation across assignments instead of starting each turn fresh.
 	persistHistory bool
@@ -149,7 +168,7 @@ func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
 				Content: systemPrompt,
 			},
 			a.messages,
-			a.tools,
+			a.assembleTools(),
 			NewSendMessagesOpts())
 		if err != nil {
 			return err
