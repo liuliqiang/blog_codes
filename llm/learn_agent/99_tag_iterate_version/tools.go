@@ -383,6 +383,27 @@ func (a *agent) generateTools() []Tool {
 				"required": []string{"name", "task_id"},
 			},
 		},
+		{
+			Name:        "connect_mcp",
+			Handler:     a.runConnectMCP,
+			Description: "Connect to a configured MCP server and discover its tools; they become available as mcp__<server>__<tool> from your next turn.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"name"},
+			},
+		},
+		{
+			Name:        "list_mcp",
+			Handler:     a.runListMCP,
+			Description: "List the configured MCP servers, which of them are connected, and the external tools available now.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
 	}
 }
 

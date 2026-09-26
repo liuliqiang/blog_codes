@@ -46,6 +46,7 @@ func (a *agent) newSubagent() *agent {
 		skills:        a.skills,
 		tasks:         a.tasks,
 		team:          a.team,
+		mcp:           a.mcp,
 		background:    NewBackgroundManager(),
 		llmClient:     a.llmClient,
 		hooks:         a.hooks.snapshot(),
