@@ -25,6 +25,7 @@ func main() {
 	agentloop.Compaction.Model = agentloop.ModelDeepseekFlash
 	agentloop.Memory.Model = agentloop.ModelDeepseekFlash
 	agentloop.Subagent.Model = agentloop.ModelDeepseekFlash
+	agentloop.Goal.Model = agentloop.ModelDeepseekFlash
 
 	// MCP servers the model may connect to, and what the host lets their tools do. A tool with no policy entry needs
 	// the user's confirmation; a server's own "readOnly" hint never grants access.
@@ -44,6 +45,7 @@ func main() {
 		OnPostToolUse(agentloop.LargeOutputHook()).
 		OnStop(agentloop.TeamEventsHook()).      // first: keeps the loop alive until teammates report
 		OnStop(agentloop.BackgroundTasksHook()). // then background tasks
+		OnStop(agentloop.GoalHook()).            // judged only once teammates and background work have reported
 		OnStop(agentloop.SummaryHook()).
 		OnStop(agentloop.MemoryHook(llmClient)). // last: only when the session really ends
 		OnCompact(agentloop.CompactLogHook())
