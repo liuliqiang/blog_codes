@@ -243,6 +243,24 @@ type Teammate struct {
 	agent  *agent
 	role   string
 	taskID string
+
+	// plan is the approval gate; workVersion changes whenever the teammate picks up or drops work, which
+	// invalidates a plan that was written for the old assignment.
+	plan        planState
+	workVersion int
+}
+
+func (m *Teammate) setPlan(p planState) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.plan = p
+}
+
+// planNow is the teammate's gate right now.
+func (m *Teammate) planNow() planState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.plan
 }
 
 func (m *Teammate) setState(s teammateState) {
@@ -260,6 +278,12 @@ func (m *Teammate) snapshot() (teammateState, string) {
 func (m *Teammate) setTask(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.taskID != id {
+		m.workVersion++
+		if m.plan == planApproved {
+			m.plan = planRequired // the approval was for the previous assignment
+		}
+	}
 	m.taskID = id
 }
 
@@ -278,6 +302,7 @@ type TeamRuntime struct {
 	mates    map[string]*Teammate
 	order    []string // spawn order, for stable listings
 	requests map[string]*shutdownRequest
+	plans    map[string]*planRequest
 	wg       sync.WaitGroup
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -289,6 +314,7 @@ func newTeamRuntime(lead *agent) *TeamRuntime {
 		bus:      NewMessageBus(mailboxDir),
 		mates:    map[string]*Teammate{},
 		requests: map[string]*shutdownRequest{},
+		plans:    map[string]*planRequest{},
 	}
 	t.ctx, t.cancel = context.WithCancel(context.Background())
 	return t
@@ -326,7 +352,7 @@ func (t *TeamRuntime) Working() int {
 
 // Spawn starts a teammate. taskID, when given, is claimed before the teammate starts: a teammate that cannot get its
 // first task never runs.
-func (t *TeamRuntime) Spawn(name, role, taskID string) (*Teammate, error) {
+func (t *TeamRuntime) Spawn(name, role, taskID string, requirePlan bool) (*Teammate, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || name == leadName || name == "agent" || name == "main" || name == "subagent" {
 		return nil, fmt.Errorf("invalid teammate name %q", name)
@@ -354,7 +380,11 @@ func (t *TeamRuntime) Spawn(name, role, taskID string) (*Teammate, error) {
 		first = []Message{{Role: MessageRoleUser, Content: assignmentPrompt(task)}}
 	}
 
-	mate := &Teammate{Name: name, state: teammateIdle, role: role, taskID: taskID}
+	gate := planNotRequired
+	if requirePlan {
+		gate = planRequired
+	}
+	mate := &Teammate{Name: name, state: teammateIdle, role: role, taskID: taskID, plan: gate}
 	mate.agent = t.newTeammateAgent(name, role)
 	t.mu.Lock()
 	t.mates[name] = mate
@@ -387,6 +417,9 @@ var teammateExcludedTools = map[string]bool{
 	"spawn_teammate":    true,
 	"list_teammates":    true,
 	"shutdown_teammate": true,
+	"create_worktree":   true,
+	"request_plan":      true,
+	"review_plan":       true,
 }
 
 // newTeammateAgent builds the agent behind a teammate: the lead's client, hooks, skills and task board, but its own
@@ -416,9 +449,12 @@ func (t *TeamRuntime) newTeammateAgent(name, role string) *agent {
 		if teammateExcludedTools[tool.Name] {
 			continue
 		}
+		if workspaceTools[tool.Name] {
+			tool = a.inAssignment(tool)
+		}
 		a.tools = append(a.tools, tool)
 	}
-	a.tools = append(a.tools, a.sendMessageTool())
+	a.tools = append(a.tools, a.sendMessageTool(), a.submitPlanTool())
 	a.toolIndex = indexTools(a.tools)
 	return a
 }
@@ -503,6 +539,11 @@ func (t *TeamRuntime) handleTeammateInbox(mate *Teammate, msgs []TeamMessage) (b
 			t.send(TeamMessage{From: mate.Name, To: leadName, Type: teamShutdownResponse, RequestID: msg.RequestID, Content: "Stopping."})
 			fmt.Fprintf(teamOut, "\033[32m[team] %s stopping\033[0m\n", mate.Name)
 			return true, nil
+		case teamPlanRequest:
+			mate.setPlan(planRequired)
+			next = append(next, Message{Role: MessageRoleUser, Content: "[Plan required] " + msg.Content})
+		case teamPlanApprovalResponse:
+			next = append(next, Message{Role: MessageRoleUser, Content: fmt.Sprintf("[Plan %s] %s", mate.planNow(), msg.Content)})
 		default:
 			next = append(next, Message{Role: MessageRoleUser, Content: fmt.Sprintf("[Message from %s] %s", msg.From, msg.Content)})
 		}
@@ -684,7 +725,11 @@ func (a *agent) runSpawnTeammate(ctx context.Context, input map[string]interface
 	if err != nil {
 		return "", err
 	}
-	mate, err := a.team.Spawn(name, role, taskID)
+	requirePlan, err := optionalBoolArg(input, "require_plan", false)
+	if err != nil {
+		return "", err
+	}
+	mate, err := a.team.Spawn(name, role, taskID, requirePlan)
 	if err != nil {
 		log4go.DefaultLogger().Error(ctx, "[%s] spawn_teammate failed: %v, input: %+v", agentNameFrom(ctx), err, input)
 		return "", err
@@ -692,6 +737,9 @@ func (a *agent) runSpawnTeammate(ctx context.Context, input map[string]interface
 	msg := fmt.Sprintf("Spawned teammate %s", mate.Name)
 	if taskID != "" {
 		msg += " on task " + taskID
+	}
+	if requirePlan {
+		msg += "; it must get a plan approved before it can change anything"
 	}
 	return msg + ". Its result will arrive as a <team_event>; end your turn instead of waiting.", nil
 }
@@ -711,6 +759,9 @@ func (a *agent) runListTeammates(_ context.Context, _ map[string]interface{}) (s
 	for _, mate := range mates {
 		state, taskID := mate.snapshot()
 		line := fmt.Sprintf("%s [%s]", mate.Name, state)
+		if gate := mate.planNow(); gate != planNotRequired {
+			line += " [plan " + string(gate) + "]"
+		}
 		if mate.role != "" {
 			line += " " + mate.role
 		}

@@ -344,6 +344,45 @@ func (a *agent) generateTools() []Tool {
 				"required": []string{"name"},
 			},
 		},
+		{
+			Name:        "request_plan",
+			Handler:     a.runRequestPlan,
+			Description: "Require a teammate to submit a plan for approval before it changes anything.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"name"},
+			},
+		},
+		{
+			Name:        "review_plan",
+			Handler:     a.runReviewPlan,
+			Description: "Approve or reject a plan a teammate submitted, by the request id from its plan_approval_request event.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"request_id": map[string]interface{}{"type": "string"},
+					"approve":    map[string]interface{}{"type": "boolean"},
+					"feedback":   map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"request_id", "approve"},
+			},
+		},
+		{
+			Name:        "create_worktree",
+			Handler:     a.runCreateWorktree,
+			Description: "Create a git worktree on branch wt/<name> and bind it to a pending, unowned task, so its owner works in a separate checkout. Use it when parallel work would otherwise edit the same files.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name":    map[string]interface{}{"type": "string"},
+					"task_id": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"name", "task_id"},
+			},
+		},
 	}
 }
 
@@ -422,6 +461,10 @@ func (a *agent) todoReminder(usedTodo bool) string {
 }
 
 func (a *agent) runTool(ctx context.Context, toolUse MessagesBlock) string {
+	if gate := a.team.planStateFor(a.name); planGatedTools[toolUse.Name] && gate != planNotRequired && gate != planApproved {
+		log4go.DefaultLogger().Error(ctx, "[%s] %s blocked, plan status is %s", a.name, toolUse.Name, gate)
+		return fmt.Sprintf("Blocked: your plan status is %s. Submit a plan with submit_plan and wait for the lead to approve it; you can still read files.", gate)
+	}
 	tool, ok := a.toolIndex[toolUse.Name]
 	if !ok {
 		log4go.DefaultLogger().Error(ctx, "unknown tool %q, tool use: %+v", toolUse.Name, toolUse)

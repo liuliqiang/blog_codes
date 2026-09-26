@@ -166,7 +166,7 @@ func TestTeam_SpawnWorksAndReports(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mate, err := lead.team.Spawn("alice", "config", task.ID)
+	mate, err := lead.team.Spawn("alice", "config", task.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,23 +222,23 @@ func TestTeam_SpawnValidation(t *testing.T) {
 	defer lead.team.Shutdown()
 
 	for _, bad := range []string{"", "lead", "main", "subagent", "a/b"} {
-		if _, err := lead.team.Spawn(bad, "", ""); err == nil {
+		if _, err := lead.team.Spawn(bad, "", "", false); err == nil {
 			t.Errorf("Spawn(%q) should fail", bad)
 		}
 	}
-	if _, err := lead.team.Spawn("alice", "", "task_00000000"); err == nil {
+	if _, err := lead.team.Spawn("alice", "", "task_00000000", false); err == nil {
 		t.Error("spawning on a missing task should fail")
 	}
 	if lead.team.Active() != 0 {
 		t.Error("a failed spawn must not leave a teammate behind")
 	}
-	if _, err := lead.team.Spawn("alice", "", ""); err != nil {
+	if _, err := lead.team.Spawn("alice", "", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lead.team.Spawn("alice", "", ""); err == nil {
+	if _, err := lead.team.Spawn("alice", "", "", false); err == nil {
 		t.Error("duplicate name should fail")
 	}
-	if _, err := lead.team.Spawn("bob", "", ""); err == nil || !strings.Contains(err.Error(), "already has 1 teammates") {
+	if _, err := lead.team.Spawn("bob", "", "", false); err == nil || !strings.Contains(err.Error(), "already has 1 teammates") {
 		t.Errorf("MaxMates not enforced: %v", err)
 	}
 }
@@ -255,7 +255,7 @@ func TestTeam_IdleClaimsFromBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := lead.team.Spawn("alice", "", first.ID); err != nil {
+	if _, err := lead.team.Spawn("alice", "", first.ID, false); err != nil {
 		t.Fatal(err)
 	}
 	defer lead.team.Shutdown()
@@ -423,7 +423,7 @@ func TestTeam_TeammateSendsToLead(t *testing.T) {
 	useTeam(t, testTeamConfig())
 	llm := newTeamLLM()
 	lead := NewAgent(llm, nil).(*agent)
-	mate, err := lead.team.Spawn("alice", "", "")
+	mate, err := lead.team.Spawn("alice", "", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}

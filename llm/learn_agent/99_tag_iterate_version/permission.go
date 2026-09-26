@@ -67,6 +67,9 @@ var (
 		"list_teammates":    true,
 		"send_message":      true,
 		"shutdown_teammate": true,
+		"request_plan":      true,
+		"review_plan":       true,
+		"submit_plan":       true,
 	}
 
 	// denySubstrings rejects any command containing one of these fragments,

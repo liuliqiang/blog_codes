@@ -38,8 +38,9 @@ type Task struct {
 	Subject     string     `json:"subject"`
 	Description string     `json:"description"`
 	Status      TaskStatus `json:"status"`
-	Owner       string     `json:"owner"`     // agent that claimed it; "" while pending
-	BlockedBy   []string   `json:"blockedBy"` // IDs that must be completed before this task can be claimed
+	Owner       string     `json:"owner"`              // agent that claimed it; "" while pending
+	BlockedBy   []string   `json:"blockedBy"`          // IDs that must be completed before this task can be claimed
+	Worktree    string     `json:"worktree,omitempty"` // checkout its owner's tools work in; empty means the repository
 }
 
 var taskIDRe = regexp.MustCompile(`^task_[0-9a-f]{8}$`)
@@ -317,6 +318,9 @@ func (s *TaskStore) claim(id, owner string) (Task, error) {
 		return Task{}, err
 	} else if busy != "" {
 		return Task{}, fmt.Errorf("%s must complete %s before claiming another task", owner, busy)
+	}
+	if _, err := taskWorktreeCwd(task); err != nil {
+		return Task{}, fmt.Errorf("cannot claim %s: %w", id, err)
 	}
 	task.Owner = owner
 	task.Status = TaskInProgress
