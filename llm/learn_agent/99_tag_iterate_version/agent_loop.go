@@ -2,6 +2,7 @@ package agentloop
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/liuliqiang/log4go"
 )
@@ -16,7 +17,9 @@ When a task needs more than a couple of steps, start by calling todo_write to br
 
 ` + teamSystemPromptGuidance + `
 
-` + mcpSystemPromptGuidance
+` + mcpSystemPromptGuidance + `
+
+` + goalSystemPromptGuidance
 
 type Agent interface {
 	RunLoop(ctx context.Context, messages []Message) error
@@ -45,6 +48,7 @@ func NewAgent(llmClient LLMClient, hooks *Hooks, recorders ...Recorder) Agent {
 		a.model = llmClient.GetModel()
 	}
 	a.team = newTeamRuntime(a)
+	a.goal = newGoalController(&llmGoalEvaluator{llm: llmClient, model: a.model})
 	a.systemPrompt = withSkillCatalog(defaultSystemPrompt, a.skills.Catalog())
 	a.tools = a.generateTools()
 	a.toolIndex = indexTools(a.tools)
@@ -97,6 +101,8 @@ type agent struct {
 
 	mcp *MCPRegistry // connected MCP servers; shared with subagents and teammates
 
+	goal *GoalController // nil on subagents and teammates: a goal belongs to the user's session
+
 	// persistHistory keeps a teammate's conversation across assignments instead of starting each turn fresh.
 	persistHistory bool
 
@@ -116,6 +122,21 @@ func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
 		withAgentName(ctx, a.name), // ctx
 		a,                          // a
 	)
+	if a.goal != nil {
+		if prompt, ok := goalCommandFrom(messages); ok {
+			work, reply, err := a.goal.handleCommand(prompt)
+			if err != nil {
+				log4go.DefaultLogger().Error(ctx, "[%s] goal command rejected: %v, prompt: %s", a.name, err, prompt)
+				return err
+			}
+			if work == "" {
+				fmt.Fprintf(hookOut, "[GOAL] %s\n", reply)
+				return nil
+			}
+			messages = []Message{{Role: MessageRoleUser, Content: work}}
+		}
+		a.goal.beginRun()
+	}
 	systemPrompt := a.systemPrompt
 	if a.memory != nil {
 		systemPrompt = withMemory(
