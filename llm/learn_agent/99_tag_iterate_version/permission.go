@@ -122,13 +122,32 @@ var (
 	promptOut io.Writer = os.Stdout
 )
 
-// checkUserAllow asks the user on the terminal whether the tool call may run.
-// Only an explicit "y" / "yes" allows it; anything else, including EOF, denies.
+// Approver decides a tool call that needs the user's confirmation, in place of the terminal prompt. It blocks until
+// the user answers or ctx is done; anything but an explicit allow denies.
+type Approver func(ctx context.Context, tool MessagesBlock) bool
+
+type approverKey struct{}
+
+// WithApprover routes the confirmations of every tool call made under ctx, including those of subagents, to approve.
+func WithApprover(ctx context.Context, approve Approver) context.Context {
+	return context.WithValue(ctx, approverKey{}, approve)
+}
+
+func approverFrom(ctx context.Context) Approver {
+	approve, _ := ctx.Value(approverKey{}).(Approver)
+	return approve
+}
+
+// checkUserAllow asks the user whether the tool call may run: through the ctx's Approver when there is one, on the
+// terminal otherwise. Only an explicit "y" / "yes" allows it; anything else, including EOF, denies.
 func checkUserAllow(ctx context.Context, tool MessagesBlock) bool {
 	if isNonInteractive(ctx) {
 		log4go.DefaultLogger().Error(ctx, "[%s] tool %q needs approval but the turn is non-interactive, denied", agentNameFrom(ctx), tool.Name)
 		fmt.Fprintf(promptOut, "\n[%s] tool %q needs approval but this is a scheduled turn: denied\n", agentNameFrom(ctx), tool.Name)
 		return false
+	}
+	if approve := approverFrom(ctx); approve != nil {
+		return approve(ctx, tool)
 	}
 	input, err := json.MarshalIndent(tool.Input, "  ", "  ")
 	if err != nil {

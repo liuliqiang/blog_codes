@@ -28,6 +28,12 @@ type Agent interface {
 // NewAgent builds an agent. hooks may be nil; the set is copied so later
 // registrations on the caller's Hooks don't affect this agent.
 func NewAgent(llmClient LLMClient, hooks *Hooks, recorders ...Recorder) Agent {
+	return newAgent(llmClient, hooks, cronPath, mailboxDir, recorders...)
+}
+
+// newAgent builds a main agent whose scheduled jobs live in cronFile and whose teammates talk through mailboxes, so
+// agents of different sessions don't share them.
+func newAgent(llmClient LLMClient, hooks *Hooks, cronFile, mailboxes string, recorders ...Recorder) *agent {
 	a := &agent{
 		name:          "main",
 		currLoop:      0,
@@ -37,7 +43,7 @@ func NewAgent(llmClient LLMClient, hooks *Hooks, recorders ...Recorder) Agent {
 		tasks:         NewTaskStore(tasksDir),
 		background:    NewBackgroundManager(),
 		mcp:           NewMCPRegistry(),
-		cron:          NewCronStore(cronPath),
+		cron:          NewCronStore(cronFile),
 		llmClient:     llmClient,
 		hooks:         hooks.snapshot(),
 		recorders:     recorders,
@@ -47,7 +53,7 @@ func NewAgent(llmClient LLMClient, hooks *Hooks, recorders ...Recorder) Agent {
 	if llmClient != nil {
 		a.model = llmClient.GetModel()
 	}
-	a.team = newTeamRuntime(a)
+	a.team = newTeamRuntime(a, mailboxes)
 	a.goal = newGoalController(&llmGoalEvaluator{llm: llmClient, model: a.model})
 	a.systemPrompt = withSkillCatalog(defaultSystemPrompt, a.skills.Catalog())
 	a.tools = a.generateTools()
@@ -131,6 +137,12 @@ func (a *agent) RunLoop(ctx context.Context, messages []Message) (err error) {
 			}
 			if work == "" {
 				fmt.Fprintf(hookOut, "[GOAL] %s\n", reply)
+				// the reply is this run's whole response, so observers see the command answered like any other turn
+				for _, r := range a.recorders {
+					r.OnStart(a.model, a.systemPrompt, messages)
+					r.OnResponse(a.turn(), SendMessagesResponse{Content: []MessagesBlock{{Type: MessagesBlockTypeText, Text: reply}}})
+					r.OnEnd(nil)
+				}
 				return nil
 			}
 			messages = []Message{{Role: MessageRoleUser, Content: work}}

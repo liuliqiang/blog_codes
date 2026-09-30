@@ -521,8 +521,17 @@ func (s *Scheduler) HasJobs() bool {
 
 // RunTurn runs the user's own turn on the agent, waiting for any scheduled turn in progress to finish first.
 func (s *Scheduler) RunTurn(ctx context.Context, messages []Message) error {
+	return s.runTurn(ctx, messages, nil)
+}
+
+// runTurn is RunTurn with a callback that runs once the turn holds the agent, so the caller can tell its own turn
+// apart from a scheduled one that got there first.
+func (s *Scheduler) runTurn(ctx context.Context, messages []Message, started func()) error {
 	s.turn.Lock()
 	defer s.turn.Unlock()
+	if started != nil {
+		started()
+	}
 	return s.agent.RunLoop(ctx, messages)
 }
 
