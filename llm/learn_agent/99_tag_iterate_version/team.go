@@ -308,10 +308,10 @@ type TeamRuntime struct {
 	cancel   context.CancelFunc
 }
 
-func newTeamRuntime(lead *agent) *TeamRuntime {
+func newTeamRuntime(lead *agent, mailboxes string) *TeamRuntime {
 	t := &TeamRuntime{
 		lead:     lead,
-		bus:      NewMessageBus(mailboxDir),
+		bus:      NewMessageBus(mailboxes),
 		mates:    map[string]*Teammate{},
 		requests: map[string]*shutdownRequest{},
 		plans:    map[string]*planRequest{},

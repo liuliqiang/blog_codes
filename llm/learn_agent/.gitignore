@@ -4,3 +4,4 @@ trace.html
 .mailboxes/
 .worktrees/
 .scheduled_tasks.json
+.sessions/

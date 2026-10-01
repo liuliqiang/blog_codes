@@ -2,20 +2,27 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 
 	agentloop "github.com/liuliqiang/llmagent/99_tag_iterate_version"
 	"github.com/liuliqiang/llmagent/99_tag_iterate_version/llm/deepseek"
 	"github.com/liuliqiang/llmagent/99_tag_iterate_version/trace"
+	"github.com/liuliqiang/llmagent/99_tag_iterate_version/web"
 )
 
-const traceHTMLPath = "trace.html"
+const (
+	traceHTMLPath = "trace.html"
+	sessionsDir   = ".sessions"
+)
 
 func main() {
 	prompt := flag.String("p", "", "prompt for an initial agent turn; without it only the cron scheduler runs")
+	webAddr := flag.String("web", "", "serve the session web UI on this address (e.g. :8080) instead of running in the terminal")
 	flag.Parse()
 
 	llmOpts := deepseek.NewDeepseekClientOptions(agentloop.ModelDeepseekFlash)
@@ -49,6 +56,17 @@ func main() {
 		OnStop(agentloop.SummaryHook()).
 		OnStop(agentloop.MemoryHook(llmClient)). // last: only when the session really ends
 		OnCompact(agentloop.CompactLogHook())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	if *webAddr != "" {
+		if err := serveWeb(ctx, *webAddr, llmClient, hooks); err != nil {
+			fmt.Fprintf(os.Stderr, "web: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	agent := agentloop.NewAgent(llmClient, hooks, rec)
 
 	sched, err := agentloop.NewScheduler(agent)
@@ -56,8 +74,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "scheduler: %v\n", err)
 		os.Exit(1)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
 
 	// the scheduler starts first so jobs that come due during the user's turn queue up and run right after it
 	schedDone := make(chan error, 1)
@@ -86,4 +102,22 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("trace written to %s\n", traceHTMLPath)
+}
+
+// serveWeb runs every session, with its own agent and cron schedule, behind the web UI until ctx is done.
+func serveWeb(ctx context.Context, addr string, llmClient agentloop.LLMClient, hooks *agentloop.Hooks) error {
+	sessions, err := agentloop.NewSessionManager(ctx, sessionsDir, llmClient, hooks)
+	if err != nil {
+		return err
+	}
+	srv := &http.Server{Addr: addr, Handler: web.NewHandler(sessions)}
+	go func() {
+		<-ctx.Done()
+		srv.Shutdown(context.Background())
+	}()
+	fmt.Printf("session web UI on http://localhost%s (Ctrl-C to stop)\n", addr)
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
